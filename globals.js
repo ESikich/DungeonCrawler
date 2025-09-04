@@ -62,7 +62,10 @@ window.playerEid = null;
 window.messages = [];
 window.stairsPos = {x: null, y: null};
 
-// --- Initialize Canvas Elements ---
+// --- Mobile Support ---
+window.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+window.touchStartPos = null;
+window.lastTouchTime = 0;
 window.initializeCanvasElements = function() {
     window.canvas = document.getElementById('gameCanvas');
     window.ctx = window.canvas.getContext('2d');
