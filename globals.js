@@ -34,13 +34,22 @@ var justDescended = false;
 var playerEid = null;
 
 // --- UI/Rendering ---
-var canvas = document.getElementById('gameCanvas');
-var ctx = canvas ? canvas.getContext('2d') : null;
+var canvas = null;
+var ctx = null;
 var lightCanvas = document.createElement('canvas');
-lightCanvas.width = DUNGEON_PIXEL_WIDTH;
-lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
-var lightCtx = lightCanvas.getContext('2d');
+var lightCtx = null;
 var messages = [];
+
+// Initialize canvas when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    canvas = document.getElementById('gameCanvas');
+    if (canvas) {
+        ctx = canvas.getContext('2d');
+        lightCanvas.width = DUNGEON_PIXEL_WIDTH;
+        lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
+        lightCtx = lightCanvas.getContext('2d');
+    }
+});
 
 // --- Game Statistics ---
 var gameStats = {
