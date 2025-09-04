@@ -2,11 +2,6 @@
  *  ECS (Entity Component System)
  *  ========================= */
 
-var nextEntityId = 1;
-var entities = new Set();
-var components = {};
-var eventQueue = [];
-
 function createComponent(type){ 
     if(!components[type]) components[type] = {}; 
 }
