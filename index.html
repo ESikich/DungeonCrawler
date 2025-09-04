@@ -8,7 +8,7 @@
 </head>
 <body>
 <div class="game-container">
-    <!-- Make canvas focusable (helps some browsers deliver key events) -->
+    <!-- tabindex makes the canvas focusable for key events -->
     <canvas id="gameCanvas" width="800" height="700" tabindex="0"></canvas>
     <div class="controls">
         WASD/Arrows: Move | SPACE: Wait | I: Inventory | D: Drop | ENTER: Use | R: Restart | ESC: Pause
@@ -39,25 +39,21 @@
 <script src="globals.js"></script>
 <script src="main.js"></script>
 
-<!-- Mobile key synthesis: taps -> real KeyboardEvents so your existing handlers run unchanged -->
+<!-- Mobile key synthesis: taps -> real KeyboardEvents -->
 <script>
 (function () {
   const canvas = document.getElementById('gameCanvas');
   const controlsRoot = document.getElementById('mobileControls');
 
-  // Map "data-key" values to proper KeyboardEvent 'key' and 'code'
   function toKeySpec(k) {
-    // Already proper tokens
     if (k === 'Enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };
     if (k === ' ')     return { key: ' ',     code: 'Space', keyCode: 32 };
-    // Normalize single letters (WASD, I, R, etc.)
     const ch = (k + '').toUpperCase();
     if (/^[A-Z]$/.test(ch)) return { key: ch.toLowerCase(), code: 'Key' + ch, keyCode: ch.charCodeAt(0) };
     return { key: k, code: k, keyCode: 0 };
   }
 
-  function synthKey(target, type, spec) {
-    // Dispatch to window so global listeners receive it regardless of focus.
+  function dispatchAll(type, spec) {
     const evOpts = {
       key: spec.key,
       code: spec.code,
@@ -66,25 +62,22 @@
       bubbles: true,
       cancelable: true,
     };
-    try {
-      window.dispatchEvent(new KeyboardEvent(type, evOpts));
-    } catch (_) {
-      // Fallback for very old engines (unlikely).
-      const e = document.createEvent('KeyboardEvent');
-      e.initEvent(type, true, true);
-      window.dispatchEvent(e);
+    const targets = [window, document, document.body, canvas].filter(Boolean);
+    for (const t of targets) {
+      try { t.dispatchEvent(new KeyboardEvent(type, evOpts)); } catch {}
     }
   }
 
   function tapKey(k) {
     const spec = toKeySpec(k);
-    // Fire keydown then keyup quickly to simulate a discrete press.
-    synthKey(window, 'keydown', spec);
-    // Queue keyup after a tick to let any handlers run.
-    setTimeout(() => synthKey(window, 'keyup', spec), 0);
+    canvas?.focus?.();
+    console.log('[mobile] synth-key:', spec.code);
+    dispatchAll('keydown',  spec);
+    dispatchAll('keypress', spec);
+    setTimeout(() => dispatchAll('keyup', spec), 0);
   }
 
-  // Wire all .mobile-controls buttons
+  // Wire mobile buttons
   controlsRoot.querySelectorAll('button[data-key]').forEach(btn => {
     const k = btn.getAttribute('data-key');
     ['pointerdown','click','touchstart'].forEach(evt => {
@@ -95,11 +88,9 @@
     });
   });
 
-  // Bonus: first tap on the canvas starts the game by simulating Space
-  // (helps when the game shows "Press SPACE to start" before controls are visible)
+  // First tap on canvas => Space (to start the game)
   ['pointerdown','click','touchstart'].forEach(evt => {
     canvas.addEventListener(evt, (e) => {
-      // Only do this once; if your game needs repeated waits, the center ⏸ button handles it.
       if (!canvas.__started) {
         canvas.__started = true;
         e.preventDefault();
@@ -108,9 +99,9 @@
     }, { passive: false, once: true });
   });
 
-  // Give focus to canvas on load for better desktop key handling
+  // Ensure canvas has focus after load
   window.addEventListener('load', () => {
-    setTimeout(() => canvas && canvas.focus && canvas.focus(), 0);
+    setTimeout(() => canvas?.focus?.(), 0);
   });
 })();
 </script>
