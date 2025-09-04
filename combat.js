@@ -33,13 +33,7 @@ function handleMove(eid, toX, toY){
         }
     }
 
-    // Actually move the entity
     pos.x=toX; pos.y=toY;
-
-    // Update vision immediately after movement for any entity that has vision
-    if (hasComponent(eid, 'vision')) {
-        updateVision(eid);
-    }
 
     if (eid===playerEid){ 
         pickupItemsAt(toX, toY);
