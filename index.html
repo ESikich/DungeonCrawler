@@ -1,66 +1,118 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Dungeon Crawler</title>
-  <!-- Make layout mobile-friendly -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+    <title>ECS Dungeon Crawler</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Mobile start overlay: disappears after first tap/click/Space -->
-  <div id="start-overlay"
-       style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;background:rgba(0,0,0,.6);z-index:9999;-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
-    <button id="start-btn"
-            style="font:600 1.05rem system-ui, sans-serif;padding:.85rem 1.25rem;border-radius:14px;border:0;background:#fff;color:#111;">
-      Tap to Start
-    </button>
-    <p style="color:#eee;font:500 .95rem system-ui, sans-serif;margin:0">…or press Space/Enter</p>
-  </div>
+<div class="game-container">
+    <!-- Make canvas focusable (helps some browsers deliver key events) -->
+    <canvas id="gameCanvas" width="800" height="700" tabindex="0"></canvas>
+    <div class="controls">
+        WASD/Arrows: Move | SPACE: Wait | I: Inventory | D: Drop | ENTER: Use | R: Restart | ESC: Pause
+    </div>
+</div>
 
-  <!-- Game scripts -->
-  <script src="globals.js"></script>
-  <script src="main.js"></script>
-  <script>
-    // --- Mobile-friendly "press Space" shim ---
-    (function () {
-      const overlay = document.getElementById('start-overlay');
-      const btn = document.getElementById('start-btn');
+<!-- Mobile Controls -->
+<div class="mobile-controls" id="mobileControls" aria-label="Mobile controls">
+    <div class="control-section">
+        <div class="d-pad" role="group" aria-label="Movement">
+            <button class="up" data-key="w" aria-label="Move up">↑</button>
+            <button class="left" data-key="a" aria-label="Move left">←</button>
+            <button class="center" data-key=" " aria-label="Wait / Space">⏸</button>
+            <button class="right" data-key="d" aria-label="Move right">→</button>
+            <button class="down" data-key="s" aria-label="Move down">↓</button>
+        </div>
+    </div>
+    
+    <div class="control-section">
+        <div class="action-buttons" role="group" aria-label="Actions">
+            <button class="action-btn primary" data-key="i" aria-label="Inventory">INV</button>
+            <button class="action-btn" data-key="Enter" aria-label="Use / Enter">USE</button>
+            <button class="action-btn" data-key="r" aria-label="Restart">RESTART</button>
+        </div>
+    </div>
+</div>
 
-      // Utility: synthesize a keyboard event so your existing Space handler runs unchanged
-      function fireSpace() {
-        const opts = { key: ' ', code: 'Space', keyCode: 32, which: 32, bubbles: true, cancelable: true };
-        try { window.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch {}
-        try { window.dispatchEvent(new KeyboardEvent('keyup',   opts)); } catch {}
+<script src="globals.js"></script>
+<script src="main.js"></script>
+
+<!-- Mobile key synthesis: taps -> real KeyboardEvents so your existing handlers run unchanged -->
+<script>
+(function () {
+  const canvas = document.getElementById('gameCanvas');
+  const controlsRoot = document.getElementById('mobileControls');
+
+  // Map "data-key" values to proper KeyboardEvent 'key' and 'code'
+  function toKeySpec(k) {
+    // Already proper tokens
+    if (k === 'Enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };
+    if (k === ' ')     return { key: ' ',     code: 'Space', keyCode: 32 };
+    // Normalize single letters (WASD, I, R, etc.)
+    const ch = (k + '').toUpperCase();
+    if (/^[A-Z]$/.test(ch)) return { key: ch.toLowerCase(), code: 'Key' + ch, keyCode: ch.charCodeAt(0) };
+    return { key: k, code: k, keyCode: 0 };
+  }
+
+  function synthKey(target, type, spec) {
+    // Dispatch to window so global listeners receive it regardless of focus.
+    const evOpts = {
+      key: spec.key,
+      code: spec.code,
+      keyCode: spec.keyCode,
+      which: spec.keyCode,
+      bubbles: true,
+      cancelable: true,
+    };
+    try {
+      window.dispatchEvent(new KeyboardEvent(type, evOpts));
+    } catch (_) {
+      // Fallback for very old engines (unlikely).
+      const e = document.createEvent('KeyboardEvent');
+      e.initEvent(type, true, true);
+      window.dispatchEvent(e);
+    }
+  }
+
+  function tapKey(k) {
+    const spec = toKeySpec(k);
+    // Fire keydown then keyup quickly to simulate a discrete press.
+    synthKey(window, 'keydown', spec);
+    // Queue keyup after a tick to let any handlers run.
+    setTimeout(() => synthKey(window, 'keyup', spec), 0);
+  }
+
+  // Wire all .mobile-controls buttons
+  controlsRoot.querySelectorAll('button[data-key]').forEach(btn => {
+    const k = btn.getAttribute('data-key');
+    ['pointerdown','click','touchstart'].forEach(evt => {
+      btn.addEventListener(evt, (e) => {
+        e.preventDefault();
+        tapKey(k);
+      }, { passive: false });
+    });
+  });
+
+  // Bonus: first tap on the canvas starts the game by simulating Space
+  // (helps when the game shows "Press SPACE to start" before controls are visible)
+  ['pointerdown','click','touchstart'].forEach(evt => {
+    canvas.addEventListener(evt, (e) => {
+      // Only do this once; if your game needs repeated waits, the center ⏸ button handles it.
+      if (!canvas.__started) {
+        canvas.__started = true;
+        e.preventDefault();
+        tapKey(' ');
       }
+    }, { passive: false, once: true });
+  });
 
-      function startViaSyntheticSpace(e) {
-        e?.preventDefault?.();
-        overlay.style.display = 'none';
-        fireSpace();
-      }
-
-      // Primary tap/click entry
-      ['pointerdown','click','touchstart'].forEach(evt => {
-        btn.addEventListener(evt, startViaSyntheticSpace, { passive: false });
-      });
-
-      // Also allow tapping anywhere in the viewport as a backup
-      ['pointerdown','click','touchstart'].forEach(evt => {
-        window.addEventListener(evt, function once(e){
-          startViaSyntheticSpace(e);
-          window.removeEventListener(evt, once, { capture:false });
-        }, { passive: false, capture: false, once: true });
-      });
-
-      // Desktop convenience: Enter should also start
-      window.addEventListener('keydown', (e) => {
-        if (e.code === 'Enter') {
-          e.preventDefault();
-          startViaSyntheticSpace(e);
-        }
-      });
-    })();
-  </script>
+  // Give focus to canvas on load for better desktop key handling
+  window.addEventListener('load', () => {
+    setTimeout(() => canvas && canvas.focus && canvas.focus(), 0);
+  });
+})();
+</script>
 </body>
 </html>
