@@ -2,19 +2,6 @@
  *  World Generation & Utils
  *  ========================= */
 
-// --- Constants ---
-var TILE_SIZE = 32;
-var DUNGEON_WIDTH = 25;
-var DUNGEON_HEIGHT = 17;
-var DUNGEON_PIXEL_WIDTH = DUNGEON_WIDTH * TILE_SIZE;
-var DUNGEON_PIXEL_HEIGHT = DUNGEON_HEIGHT * TILE_SIZE;
-var MEMORY_REVEAL = 0.7;
-
-// --- World data ---
-var dungeonGrid = [];
-var rooms = [];
-var stairsPos = {x:null, y:null};
-
 // --- Utils ---
 function randInt(min, max){ 
     return Math.floor(Math.random()*(max-min+1))+min; 
