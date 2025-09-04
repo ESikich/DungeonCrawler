@@ -2,19 +2,6 @@
  *  UI and Rendering
  *  ========================= */
 
-// Canvas and lighting setup
-var canvas = document.getElementById('gameCanvas');
-var ctx = canvas.getContext('2d');
-if (!canvas || !ctx) alert('Canvas not supported');
-
-var lightCanvas = document.createElement('canvas');
-lightCanvas.width = DUNGEON_PIXEL_WIDTH;
-lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
-var lightCtx = lightCanvas.getContext('2d');
-
-// Message system
-var messages = [];
-
 function addMessage(text){
     messages.push({text:text, time:Date.now()});
     if (messages.length>10) messages = messages.slice(-10);
@@ -26,6 +13,11 @@ function updateMessages(){
 }
 
 function render(){
+    if (!canvas || !ctx) {
+        console.error('Canvas not available');
+        return;
+    }
+    
     ctx.fillStyle='black'; 
     ctx.fillRect(0,0,canvas.width,canvas.height);
     
@@ -45,6 +37,9 @@ function render(){
 
         if (uiMode==='inventory') renderInventoryOverlay();
         if (gameState==='paused') renderPause();
+        else if (gameState==='gameOver') renderGameOver();
+    }
+}d') renderPause();
         else if (gameState==='gameOver') renderGameOver();
     }
 }
@@ -259,9 +254,6 @@ function renderEntities(){
 }
 
 function renderLighting(){
-    // Initialize lighting canvas if not done yet
-    if (!lightCanvas) initLightCanvas();
-    
     if (lightCanvas.width!==DUNGEON_PIXEL_WIDTH || lightCanvas.height!==DUNGEON_PIXEL_HEIGHT){
         lightCanvas.width=DUNGEON_PIXEL_WIDTH; 
         lightCanvas.height=DUNGEON_PIXEL_HEIGHT;
@@ -272,12 +264,10 @@ function renderLighting(){
 
     lightCtx.clearRect(0,0,lightCanvas.width, lightCanvas.height);
 
-    // Start with everything dark
     lightCtx.globalCompositeOperation='source-over';
     lightCtx.fillStyle='rgba(0,0,0,1)';
     lightCtx.fillRect(0,0,DUNGEON_PIXEL_WIDTH, DUNGEON_PIXEL_HEIGHT);
 
-    // Reveal seen areas with memory
     if (v.seen && v.seen.size){
         lightCtx.globalCompositeOperation='destination-out';
         lightCtx.beginPath();
@@ -293,7 +283,6 @@ function renderLighting(){
         lightCtx.fill();
     }
 
-    // Create vision gradient for currently visible areas
     var cx = (pos.x+0.5)*TILE_SIZE, cy=(pos.y+0.5)*TILE_SIZE;
     var outer = v.radius * TILE_SIZE;
     var grad = lightCtx.createRadialGradient(cx,cy,0, cx,cy,outer);
@@ -306,7 +295,6 @@ function renderLighting(){
     grad.addColorStop(0.90, 'rgba(0,0,0,'+a(0.90)+')');
     grad.addColorStop(1.00, 'rgba(0,0,0,0)');
 
-    // Apply gradient only to visible areas
     lightCtx.save();
     lightCtx.beginPath();
     v.visible.forEach(function(key){
@@ -322,7 +310,6 @@ function renderLighting(){
     lightCtx.fillRect(0,0,DUNGEON_PIXEL_WIDTH, DUNGEON_PIXEL_HEIGHT);
     lightCtx.restore();
 
-    // Draw the lighting overlay onto main canvas
     lightCtx.globalCompositeOperation='source-over';
     ctx.drawImage(lightCanvas,0,0);
 }
