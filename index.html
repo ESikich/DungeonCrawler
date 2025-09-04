@@ -1,41 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
-    <title>ECS Dungeon Crawler</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <title>Dungeon Crawler</title>
+  <!-- Make layout mobile-friendly -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="game-container">
-    <canvas id="gameCanvas" width="800" height="700"></canvas>
-    <div class="controls">
-        WASD/Arrows: Move | SPACE: Wait | I: Inventory | D: Drop | ENTER: Use | R: Restart | ESC: Pause
-    </div>
-</div>
+  <!-- Mobile start overlay: disappears after first tap/click/Space -->
+  <div id="start-overlay"
+       style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;background:rgba(0,0,0,.6);z-index:9999;-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+    <button id="start-btn"
+            style="font:600 1.05rem system-ui, sans-serif;padding:.85rem 1.25rem;border-radius:14px;border:0;background:#fff;color:#111;">
+      Tap to Start
+    </button>
+    <p style="color:#eee;font:500 .95rem system-ui, sans-serif;margin:0">…or press Space/Enter</p>
+  </div>
 
-<!-- Mobile Controls -->
-<div class="mobile-controls" id="mobileControls">
-    <div class="control-section">
-        <div class="d-pad">
-            <button class="up" data-key="w">↑</button>
-            <button class="left" data-key="a">←</button>
-            <button class="center" data-key=" ">⏸</button>
-            <button class="right" data-key="d">→</button>
-            <button class="down" data-key="s">↓</button>
-        </div>
-    </div>
-    
-    <div class="control-section">
-        <div class="action-buttons">
-            <button class="action-btn primary" data-key="i">INV</button>
-            <button class="action-btn" data-key="Enter">USE</button>
-            <button class="action-btn" data-key="r">RESTART</button>
-        </div>
-    </div>
-</div>
+  <!-- Game scripts -->
+  <script src="globals.js"></script>
+  <script src="main.js"></script>
+  <script>
+    // --- Mobile-friendly "press Space" shim ---
+    (function () {
+      const overlay = document.getElementById('start-overlay');
+      const btn = document.getElementById('start-btn');
 
-<script src="globals.js"></script>
-<script src="main.js"></script>
+      // Utility: synthesize a keyboard event so your existing Space handler runs unchanged
+      function fireSpace() {
+        const opts = { key: ' ', code: 'Space', keyCode: 32, which: 32, bubbles: true, cancelable: true };
+        try { window.dispatchEvent(new KeyboardEvent('keydown', opts)); } catch {}
+        try { window.dispatchEvent(new KeyboardEvent('keyup',   opts)); } catch {}
+      }
+
+      function startViaSyntheticSpace(e) {
+        e?.preventDefault?.();
+        overlay.style.display = 'none';
+        fireSpace();
+      }
+
+      // Primary tap/click entry
+      ['pointerdown','click','touchstart'].forEach(evt => {
+        btn.addEventListener(evt, startViaSyntheticSpace, { passive: false });
+      });
+
+      // Also allow tapping anywhere in the viewport as a backup
+      ['pointerdown','click','touchstart'].forEach(evt => {
+        window.addEventListener(evt, function once(e){
+          startViaSyntheticSpace(e);
+          window.removeEventListener(evt, once, { capture:false });
+        }, { passive: false, capture: false, once: true });
+      });
+
+      // Desktop convenience: Enter should also start
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Enter') {
+          e.preventDefault();
+          startViaSyntheticSpace(e);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
