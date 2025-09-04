@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
     <title>ECS Dungeon Crawler</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+      /* Make taps crisp and avoid double-fires */
+      .mobile-controls button {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
 </head>
 <body>
 <div class="game-container">
@@ -39,12 +46,13 @@
 <script src="globals.js"></script>
 <script src="main.js"></script>
 
-<!-- Mobile key synthesis: taps -> real KeyboardEvents -->
+<!-- Mobile key synthesis: one tap => one keydown + one keyup (debounced) -->
 <script>
 (function () {
   const canvas = document.getElementById('gameCanvas');
   const controlsRoot = document.getElementById('mobileControls');
 
+  // Normalize keys used by your game
   function toKeySpec(k) {
     if (k === 'Enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };
     if (k === ' ')     return { key: ' ',     code: 'Space', keyCode: 32 };
@@ -53,53 +61,62 @@
     return { key: k, code: k, keyCode: 0 };
   }
 
-  function dispatchAll(type, spec) {
+  function dispatchKey(target, type, spec) {
     const evOpts = {
       key: spec.key,
       code: spec.code,
       keyCode: spec.keyCode,
       which: spec.keyCode,
       bubbles: true,
-      cancelable: true,
+      cancelable: true
     };
-    const targets = [window, document, document.body, canvas].filter(Boolean);
-    for (const t of targets) {
-      try { t.dispatchEvent(new KeyboardEvent(type, evOpts)); } catch {}
-    }
+    try { target.dispatchEvent(new KeyboardEvent(type, evOpts)); } catch {}
   }
+
+  // Global tap lock to guarantee 1 press per tap
+  let inFlight = false;
 
   function tapKey(k) {
+    if (inFlight) return;
+    inFlight = true;
+
     const spec = toKeySpec(k);
+    // Focus canvas so desktop browsers also behave
     canvas?.focus?.();
-    console.log('[mobile] synth-key:', spec.code);
-    dispatchAll('keydown',  spec);
-    dispatchAll('keypress', spec);
-    setTimeout(() => dispatchAll('keyup', spec), 0);
+
+    // Dispatch to document (primary) and window (secondary) – once each
+    dispatchKey(document, 'keydown', spec);
+    dispatchKey(window,   'keydown', spec);
+
+    // Release shortly after (no 'keypress' — many engines treat it as another action)
+    setTimeout(() => {
+      dispatchKey(document, 'keyup', spec);
+      dispatchKey(window,   'keyup', spec);
+      inFlight = false;
+    }, 60); // ~1 frame on 60Hz; tweak if desired (40–80ms)
   }
 
-  // Wire mobile buttons
+  // Wire mobile buttons — ONLY pointerdown to avoid duplicate click/touchstart firing
   controlsRoot.querySelectorAll('button[data-key]').forEach(btn => {
     const k = btn.getAttribute('data-key');
-    ['pointerdown','click','touchstart'].forEach(evt => {
-      btn.addEventListener(evt, (e) => {
-        e.preventDefault();
-        tapKey(k);
-      }, { passive: false });
-    });
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tapKey(k);
+    }, { passive: false });
   });
 
-  // First tap on canvas => Space (to start the game)
-  ['pointerdown','click','touchstart'].forEach(evt => {
-    canvas.addEventListener(evt, (e) => {
-      if (!canvas.__started) {
-        canvas.__started = true;
-        e.preventDefault();
-        tapKey(' ');
-      }
-    }, { passive: false, once: true });
-  });
+  // First tap on canvas => Space (to pass "Press SPACE to start")
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!canvas.__started) {
+      canvas.__started = true;
+      e.preventDefault();
+      e.stopPropagation();
+      tapKey(' ');
+    }
+  }, { passive: false, once: true });
 
-  // Ensure canvas has focus after load
+  // Ensure canvas has focus after load for desktop users
   window.addEventListener('load', () => {
     setTimeout(() => canvas?.focus?.(), 0);
   });
