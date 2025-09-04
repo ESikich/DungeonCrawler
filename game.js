@@ -240,14 +240,14 @@ function gameLoop(){
     requestAnimationFrame(gameLoop); 
 }
 
-// Initialize when DOM is ready
+// Initialize when DOM is ready - but DON'T call initGame() yet!
 document.addEventListener('DOMContentLoaded', function() {
     if (!canvas || !ctx) {
         console.error('Canvas not found or not supported');
         return;
     }
     
-    // Start the game
+    // Just start the game loop and input - stay in 'start' state until SPACE is pressed
     setupInput();
     gameLoop();
 });
