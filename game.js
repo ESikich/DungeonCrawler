@@ -180,7 +180,13 @@ function initGame(){
     spawnMonstersAvoiding(p.x,p.y);
     spawnItemsAvoiding(p.x,p.y);
 
+    // Make sure vision is updated after everything is set up
     updateVision(playerEid);
+    
+    // Initialize lighting canvas
+    if (typeof initLightCanvas === 'function') {
+        initLightCanvas();
+    }
 }
 
 function setupInput(){
