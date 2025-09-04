@@ -73,13 +73,19 @@ function nextLevel(){
 function processTurn(){
     playerAttackedThisTurn = false;
 
+    // Process player movement first
     processMovement();
 
+    // Process AI movement
     processAI();
     processMovement();
 
+    // Update vision for all entities with vision components
+    // This ensures fog of war updates properly
     var seers=getEntitiesWith(['vision','position']);
-    for (var i=0;i<seers.length;i++) updateVision(seers[i]);
+    for (var i=0;i<seers.length;i++) {
+        updateVision(seers[i]);
+    }
 
     if (!playerAttackedThisTurn && !justDescended) {
         enemyAdjacentAutoAttacks();
