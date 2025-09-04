@@ -2,40 +2,6 @@
  *  Main Game Logic
  *  ========================= */
 
-// --- Game/UI state ---
-var gameState = 'start';
-var uiMode = 'game';
-var invSelIndex = 0;
-var turnCount = 0;
-var gameOver = false;
-var floor = 0;
-var playerGold = 0;
-var playerAttackedThisTurn = false;
-var justDescended = false;
-var playerEid = null;
-
-// --- Game Statistics ---
-var gameStats = {
-    enemiesKilled: 0,
-    totalDamageDealt: 0,
-    totalDamageTaken: 0,
-    itemsPickedUp: 0,
-    goldCollected: 0,
-    potionsUsed: 0,
-    bombsUsed: 0,
-    scrollsUsed: 0,
-    itemsDropped: 0,
-    floorsDescended: 0,
-    timesSeen: 0,
-    timesAttacked: 0,
-    highestLevel: 1,
-    totalXpGained: 0,
-    deathCause: 'Unknown',
-    killedBy: 'Unknown',
-    startTime: 0,
-    endTime: 0
-};
-
 function nextLevel(){
     floor -= 1;
     gameStats.floorsDescended++;
@@ -73,19 +39,13 @@ function nextLevel(){
 function processTurn(){
     playerAttackedThisTurn = false;
 
-    // Process player movement first
     processMovement();
 
-    // Process AI movement
     processAI();
     processMovement();
 
-    // Update vision for all entities with vision components
-    // This ensures fog of war updates properly
     var seers=getEntitiesWith(['vision','position']);
-    for (var i=0;i<seers.length;i++) {
-        updateVision(seers[i]);
-    }
+    for (var i=0;i<seers.length;i++) updateVision(seers[i]);
 
     if (!playerAttackedThisTurn && !justDescended) {
         enemyAdjacentAutoAttacks();
@@ -186,13 +146,7 @@ function initGame(){
     spawnMonstersAvoiding(p.x,p.y);
     spawnItemsAvoiding(p.x,p.y);
 
-    // Make sure vision is updated after everything is set up
     updateVision(playerEid);
-    
-    // Initialize lighting canvas
-    if (typeof initLightCanvas === 'function') {
-        initLightCanvas();
-    }
 }
 
 function setupInput(){
@@ -286,6 +240,14 @@ function gameLoop(){
     requestAnimationFrame(gameLoop); 
 }
 
-// Start
-setupInput();
-gameLoop();
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    if (!canvas || !ctx) {
+        console.error('Canvas not found or not supported');
+        return;
+    }
+    
+    // Start the game
+    setupInput();
+    gameLoop();
+});
