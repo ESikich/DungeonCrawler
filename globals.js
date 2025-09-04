@@ -1,58 +1,34 @@
 /** =========================
- *  Global Variables - Shared across all modules
+ *  Global Variables and Constants
  *  ========================= */
 
-// --- Constants ---
-var TILE_SIZE = 32;
-var DUNGEON_WIDTH = 25;
-var DUNGEON_HEIGHT = 17;
-var DUNGEON_PIXEL_WIDTH = DUNGEON_WIDTH * TILE_SIZE;
-var DUNGEON_PIXEL_HEIGHT = DUNGEON_HEIGHT * TILE_SIZE;
-var MEMORY_REVEAL = 0.7;
+// --- Canvas and Rendering Constants ---
+window.TILE_SIZE = 32;
+window.DUNGEON_WIDTH = 25;
+window.DUNGEON_HEIGHT = 17;
+window.DUNGEON_PIXEL_WIDTH = window.DUNGEON_WIDTH * window.TILE_SIZE;
+window.DUNGEON_PIXEL_HEIGHT = window.DUNGEON_HEIGHT * window.TILE_SIZE;
+window.MEMORY_REVEAL = 0.7;
 
-// --- ECS Core ---
-var nextEntityId = 1;
-var entities = new Set();
-var components = {};
-var eventQueue = [];
-
-// --- World Data ---
-var dungeonGrid = [];
-var rooms = [];
-var stairsPos = {x:null, y:null};
+// --- Canvas Elements ---
+window.canvas = null;
+window.ctx = null;
+window.lightCanvas = null;
+window.lightCtx = null;
 
 // --- Game State ---
-var gameState = 'start';  // Proper start state like original
-var uiMode = 'game';
-var invSelIndex = 0;
-var turnCount = 0;
-var gameOver = false;
-var floor = 0;
-var playerGold = 0;
-var playerAttackedThisTurn = false;
-var justDescended = false;
-var playerEid = null;
-
-// --- UI/Rendering ---
-var canvas = null;
-var ctx = null;
-var lightCanvas = document.createElement('canvas');
-var lightCtx = null;
-var messages = [];
-
-// Initialize canvas when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    canvas = document.getElementById('gameCanvas');
-    if (canvas) {
-        ctx = canvas.getContext('2d');
-        lightCanvas.width = DUNGEON_PIXEL_WIDTH;
-        lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
-        lightCtx = lightCanvas.getContext('2d');
-    }
-});
+window.gameState = 'start';
+window.uiMode = 'game';
+window.invSelIndex = 0;
+window.turnCount = 0;
+window.gameOver = false;
+window.floor = 0;
+window.playerGold = 0;
+window.playerAttackedThisTurn = false;
+window.justDescended = false;
 
 // --- Game Statistics ---
-var gameStats = {
+window.gameStats = {
     enemiesKilled: 0,
     totalDamageDealt: 0,
     totalDamageTaken: 0,
@@ -71,77 +47,35 @@ var gameStats = {
     killedBy: 'Unknown',
     startTime: 0,
     endTime: 0
-};/** =========================
- *  Global Variables - Shared across all modules
- *  ========================= */
+};
 
-// --- Constants ---
-var TILE_SIZE = 32;
-var DUNGEON_WIDTH = 25;
-var DUNGEON_HEIGHT = 17;
-var DUNGEON_PIXEL_WIDTH = DUNGEON_WIDTH * TILE_SIZE;
-var DUNGEON_PIXEL_HEIGHT = DUNGEON_HEIGHT * TILE_SIZE;
-var MEMORY_REVEAL = 0.7;
-
-// --- ECS Core ---
-var nextEntityId = 1;
-var entities = new Set();
-var components = {};
-var eventQueue = [];
+// --- ECS System ---
+window.nextEntityId = 1;
+window.entities = new Set();
+window.components = {};
+window.eventQueue = [];
 
 // --- World Data ---
-var dungeonGrid = [];
-var rooms = [];
-var stairsPos = {x:null, y:null};
+window.dungeonGrid = [];
+window.rooms = [];
+window.playerEid = null;
+window.messages = [];
+window.stairsPos = {x: null, y: null};
 
-// --- Game State ---
-var gameState = 'start';
-var uiMode = 'game';
-var invSelIndex = 0;
-var turnCount = 0;
-var gameOver = false;
-var floor = 0;
-var playerGold = 0;
-var playerAttackedThisTurn = false;
-var justDescended = false;
-var playerEid = null;
-
-// --- UI/Rendering ---
-var canvas = null;
-var ctx = null;
-var lightCanvas = document.createElement('canvas');
-var lightCtx = null;
-var messages = [];
-
-// Initialize canvas when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    canvas = document.getElementById('gameCanvas');
-    if (canvas) {
-        ctx = canvas.getContext('2d');
-        lightCanvas.width = DUNGEON_PIXEL_WIDTH;
-        lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
-        lightCtx = lightCanvas.getContext('2d');
+// --- Initialize Canvas Elements ---
+window.initializeCanvasElements = function() {
+    window.canvas = document.getElementById('gameCanvas');
+    window.ctx = window.canvas.getContext('2d');
+    if (!window.canvas || !window.ctx) {
+        alert('Canvas not supported');
+        return false;
     }
-});
-
-// --- Game Statistics ---
-var gameStats = {
-    enemiesKilled: 0,
-    totalDamageDealt: 0,
-    totalDamageTaken: 0,
-    itemsPickedUp: 0,
-    goldCollected: 0,
-    potionsUsed: 0,
-    bombsUsed: 0,
-    scrollsUsed: 0,
-    itemsDropped: 0,
-    floorsDescended: 0,
-    timesSeen: 0,
-    timesAttacked: 0,
-    highestLevel: 1,
-    totalXpGained: 0,
-    deathCause: 'Unknown',
-    killedBy: 'Unknown',
-    startTime: 0,
-    endTime: 0
+    
+    // Offscreen canvas for lighting overlay
+    window.lightCanvas = document.createElement('canvas');
+    window.lightCanvas.width = window.DUNGEON_PIXEL_WIDTH;
+    window.lightCanvas.height = window.DUNGEON_PIXEL_HEIGHT;
+    window.lightCtx = window.lightCanvas.getContext('2d');
+    
+    return true;
 };
