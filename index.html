@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
     <title>ECS Dungeon Crawler</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -11,6 +11,27 @@
     <canvas id="gameCanvas" width="800" height="700"></canvas>
     <div class="controls">
         WASD/Arrows: Move | SPACE: Wait | I: Inventory | D: Drop | ENTER: Use | R: Restart | ESC: Pause
+    </div>
+</div>
+
+<!-- Mobile Controls -->
+<div class="mobile-controls" id="mobileControls">
+    <div class="control-section">
+        <div class="d-pad">
+            <button class="up" data-key="w">↑</button>
+            <button class="left" data-key="a">←</button>
+            <button class="center" data-key=" ">⏸</button>
+            <button class="right" data-key="d">→</button>
+            <button class="down" data-key="s">↓</button>
+        </div>
+    </div>
+    
+    <div class="control-section">
+        <div class="action-buttons">
+            <button class="action-btn primary" data-key="i">INV</button>
+            <button class="action-btn" data-key="Enter">USE</button>
+            <button class="action-btn" data-key="r">RESTART</button>
+        </div>
     </div>
 </div>
 
