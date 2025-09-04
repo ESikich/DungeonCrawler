@@ -17,9 +17,9 @@ body {
     position: relative;
 }
 
-canvas { 
-    display: block; 
-    background: #000; 
+canvas {
+    display: block;
+    background: #000;
 }
 
 .controls {
