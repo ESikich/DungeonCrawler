@@ -362,16 +362,6 @@ function nextLevel(){
     addMessage('You descend to floor '+floor+'...');
 }
 
-// --- Messages ---
-function addMessage(text){
-    messages.push({text:text, time:Date.now()});
-    if (messages.length>10) messages = messages.slice(-10);
-}
-function updateMessages(){
-    var now=Date.now();
-    messages = messages.filter(function(m){ return now - m.time < 5000; });
-}
-
 // --- UI / Rendering ---
 function render(){
     ctx.fillStyle='black'; ctx.fillRect(0,0,canvas.width,canvas.height);
