@@ -146,6 +146,10 @@ function useInventoryItem(index) {
             var rad = it.radius || 1;
             var dmg = it.damage || 15;
             var hit = 0;
+            
+            // Create explosion visual effect
+            createExplosion(ppos.x, ppos.y, rad);  // <-- ADD THIS LINE
+            
             for (var dy = -rad; dy <= rad; dy++) {
                 for (var dx = -rad; dx <= rad; dx++) {
                     if (dx === 0 && dy === 0) continue;
