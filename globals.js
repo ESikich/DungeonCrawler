@@ -27,6 +27,9 @@ window.playerGold = 0;
 window.playerAttackedThisTurn = false;
 window.justDescended = false;
 
+// --- Visual Effects ---
+window.explosions = [];
+
 // --- Game Statistics ---
 window.gameStats = {
     enemiesKilled: 0,
