@@ -2,12 +2,6 @@
  *  Entity Component System
  *  ========================= */
 
-// ECS state - these will be managed by globals.js instead
-// var nextEntityId = 1;
-// var entities = new Set();
-// var components = {};
-// var eventQueue = [];
-
 /**
  * Create a component type if it doesn't exist
  */
