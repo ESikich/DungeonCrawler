@@ -371,6 +371,7 @@ function render(){
     if (gameState==='playing' || gameState==='paused' || gameState==='gameOver'){
         renderDungeon();
         renderEntities();
+        renderExplosions();
         renderLighting();
         renderHUD();
         renderMessages();
@@ -842,6 +843,7 @@ function resetGame(){
     justDescended=false;
     playerGold=0;
     turnCount=0;
+    explosions = [];
     
     gameStats = {
         enemiesKilled: 0,
@@ -955,6 +957,7 @@ function setupInput(){
 function initGame(){
     entities.clear(); components={}; eventQueue=[]; messages=[];
     turnCount=0; gameOver=false; floor=0; justDescended=false; uiMode='game';
+    explosions = [];
 
     if (!gameStats.startTime) {
         gameStats.startTime = Date.now();
@@ -975,9 +978,98 @@ function initGame(){
     updateVision(playerEid);
 }
 
+function createExplosion(x, y, radius) {
+    explosions.push({
+        x: x,
+        y: y,
+        radius: radius,
+        startTime: Date.now(),
+        duration: 600,
+        maxRadius: radius + 0.5
+    });
+}
+
+function updateExplosions() {
+    var now = Date.now();
+    explosions = explosions.filter(function(explosion) {
+        return (now - explosion.startTime) < explosion.duration;
+    });
+}
+
+function renderExplosions() {
+    var now = Date.now();
+    
+    for (var i = 0; i < explosions.length; i++) {
+        var explosion = explosions[i];
+        var elapsed = now - explosion.startTime;
+        var progress = elapsed / explosion.duration;
+        
+        if (progress >= 1) continue;
+        
+        var centerX = (explosion.x + 0.5) * TILE_SIZE;
+        var centerY = (explosion.y + 0.5) * TILE_SIZE;
+        
+        // Create multiple expanding circles for the blast effect
+        for (var wave = 0; wave < 3; wave++) {
+            var waveProgress = Math.max(0, progress - wave * 0.1);
+            if (waveProgress <= 0) continue;
+            
+            var currentRadius = waveProgress * explosion.maxRadius * TILE_SIZE;
+            var alpha = (1 - waveProgress) * 0.8;
+            
+            // Outer blast ring
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = wave === 0 ? '#ff6600' : wave === 1 ? '#ff9900' : '#ffcc00';
+            ctx.lineWidth = 4 - wave;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+        
+        // Inner flash effect
+        if (progress < 0.3) {
+            var flashAlpha = (1 - progress / 0.3) * 0.4;
+            ctx.save();
+            ctx.globalAlpha = flashAlpha;
+            ctx.fillStyle = '#ffff00';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, explosion.radius * TILE_SIZE * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        // Affected tiles highlight
+        var tileAlpha = (1 - progress) * 0.3;
+        if (tileAlpha > 0) {
+            ctx.save();
+            ctx.globalAlpha = tileAlpha;
+            ctx.fillStyle = '#ff0000';
+            
+            var rad = Math.floor(explosion.radius);
+            for (var dy = -rad; dy <= rad; dy++) {
+                for (var dx = -rad; dx <= rad; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    var tx = explosion.x + dx;
+                    var ty = explosion.y + dy;
+                    if (inBounds(tx, ty)) {
+                        var dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= explosion.radius) {
+                            ctx.fillRect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        }
+                    }
+                }
+            }
+            ctx.restore();
+        }
+    }
+}
+
 // --- Game loop ---
 function gameLoop(){ 
-    updateMessages(); 
+    updateMessages();
+    updateExplosions();
     render(); 
     requestAnimationFrame(gameLoop); 
 }
