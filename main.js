@@ -12,28 +12,6 @@ lightCanvas.width = DUNGEON_PIXEL_WIDTH;
 lightCanvas.height = DUNGEON_PIXEL_HEIGHT;
 var lightCtx = lightCanvas.getContext('2d');
 
-// --- Tiles ---
-function Tile(walkable, opaque, color, glyph){
-    this.walkable = walkable;
-    this.opaque = opaque;
-    this.color = color || [128,128,128];
-    this.glyph = glyph || '?';
-}
-Tile.wall   = function(){ return new Tile(false, true,  [100,100,100], '#'); };
-Tile.floor  = function(){ return new Tile(true,  false, [50,50,50],   '.'); };
-Tile.stairs = function(){ return new Tile(true,  false, [255,215,0],  '>'); };
-
-// --- Rooms ---
-function Room(x,y,w,h){ this.x=x; this.y=y; this.width=w; this.height=h; }
-Room.prototype.centerX = function(){ return this.x + Math.floor(this.width/2); };
-Room.prototype.centerY = function(){ return this.y + Math.floor(this.height/2); };
-Room.prototype.intersects = function(other){
-    return !(this.x + this.width <= other.x ||
-             other.x + other.width <= this.x ||
-             this.y + this.height <= other.y ||
-             other.y + other.height <= this.y);
-};
-
 // --- Entities ---
 function createPlayer(x,y){
     var eid = createEntity();
