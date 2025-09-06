@@ -41,7 +41,7 @@ function createItem(type, x, y) {
  * Spawn items randomly in rooms, avoiding the player position
  */
 function spawnItemsAvoiding(px, py) {
-    for (var i = 0; i < rooms.length; i++) {
+    for (let i = 0; i < Game.world.rooms.length; i++) {
         if (Math.random() < 0.5) {
             var r = rooms[i];
             var x = randInt(r.x, r.x + r.width - 1);
