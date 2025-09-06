@@ -1,25 +1,17 @@
 /** =========================
- *  Game Namespace - Refactored Global Variables
+ *  Global Game Namespace - Complete Final Version
  *  ========================= */
 
-// Create a single global namespace instead of polluting window
+// Create a single global namespace
 const Game = {
     // --- Constants ---
     config: {
         TILE_SIZE: 32,
         DUNGEON_WIDTH: 25,
         DUNGEON_HEIGHT: 17,
-        DUNGEON_PIXEL_WIDTH: 25 * 32, // calculated
-        DUNGEON_PIXEL_HEIGHT: 17 * 32, // calculated
+        get DUNGEON_PIXEL_WIDTH() { return this.DUNGEON_WIDTH * this.TILE_SIZE; },
+        get DUNGEON_PIXEL_HEIGHT() { return this.DUNGEON_HEIGHT * this.TILE_SIZE; },
         MEMORY_REVEAL: 0.7
-    },
-
-    // --- Rendering ---
-    rendering: {
-        canvas: null,
-        ctx: null,
-        lightCanvas: null,
-        lightCtx: null
     },
 
     // --- Game State ---
@@ -33,6 +25,23 @@ const Game = {
         playerGold: 0,
         playerAttackedThisTurn: false,
         justDescended: false
+    },
+
+    // --- World Data ---
+    world: {
+        dungeonGrid: [],
+        rooms: [],
+        playerEid: null,
+        messages: [],
+        stairsPos: { x: null, y: null },
+
+        reset() {
+            this.dungeonGrid = [];
+            this.rooms = [];
+            this.playerEid = null;
+            this.messages = [];
+            this.stairsPos = { x: null, y: null };
+        }
     },
 
     // --- Visual Effects ---
@@ -85,62 +94,11 @@ const Game = {
         }
     },
 
-    // --- ECS System ---
-    ecs: {
-        nextEntityId: 1,
-        entities: new Set(),
-        components: {},
-        eventQueue: [],
-
-        reset() {
-            this.nextEntityId = 1;
-            this.entities.clear();
-            this.components = {};
-            this.eventQueue = [];
-        }
-    },
-
-    // --- World Data ---
-    world: {
-        dungeonGrid: [],
-        rooms: [],
-        playerEid: null,
-        messages: [],
-        stairsPos: { x: null, y: null },
-
-        reset() {
-            this.dungeonGrid = [];
-            this.rooms = [];
-            this.playerEid = null;
-            this.messages = [];
-            this.stairsPos = { x: null, y: null };
-        }
-    },
-
     // --- Device Detection ---
     device: {
         isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
         touchStartPos: null,
         lastTouchTime: 0
-    },
-
-    // --- Initialization Helper ---
-    initializeCanvasElements() {
-        this.rendering.canvas = document.getElementById('gameCanvas');
-        this.rendering.ctx = this.rendering.canvas.getContext('2d');
-        
-        if (!this.rendering.canvas || !this.rendering.ctx) {
-            alert('Canvas not supported');
-            return false;
-        }
-        
-        // Offscreen canvas for lighting overlay
-        this.rendering.lightCanvas = document.createElement('canvas');
-        this.rendering.lightCanvas.width = this.config.DUNGEON_PIXEL_WIDTH;
-        this.rendering.lightCanvas.height = this.config.DUNGEON_PIXEL_HEIGHT;
-        this.rendering.lightCtx = this.rendering.lightCanvas.getContext('2d');
-        
-        return true;
     },
 
     // --- Full Game Reset ---
@@ -157,20 +115,13 @@ const Game = {
 
         this.effects.explosions = [];
         this.stats.reset();
-        this.ecs.reset();
         this.world.reset();
     }
 };
 
-// For backward compatibility during migration, expose some commonly used values
-// These can be removed once all files are updated
+// For backward compatibility during migration
 const TILE_SIZE = Game.config.TILE_SIZE;
 const DUNGEON_WIDTH = Game.config.DUNGEON_WIDTH;
 const DUNGEON_HEIGHT = Game.config.DUNGEON_HEIGHT;
 const DUNGEON_PIXEL_WIDTH = Game.config.DUNGEON_PIXEL_WIDTH;
 const DUNGEON_PIXEL_HEIGHT = Game.config.DUNGEON_PIXEL_HEIGHT;
-
-// Export for modules (if using ES6 modules later)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Game;
-}
