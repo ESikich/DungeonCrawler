@@ -2,9 +2,9 @@
  *  ECS Dungeon Crawler — With Statistics
  *  ========================= */
 
-var canvas = document.getElementById('gameCanvas');
-var ctx = canvas.getContext('2d');
-if (!canvas || !ctx) alert('Canvas not supported');
+Game.rendering.canvas = document.getElementById('gameCanvas');
+Game.rendering.ctx = Game.rendering.canvas.getContext('2d');
+Game.state.current = 'playing';
 
 // Offscreen for lighting overlay
 var lightCanvas = document.createElement('canvas');
