@@ -1,12 +1,12 @@
 /** =========================
- *  Item System
+ *  Item System - Using Game Namespace
  *  ========================= */
 
 /**
  * Get item data definition for a given item type
  */
 function itemDataFor(type) {
-    var items = {
+    const items = {
         'potion': {kind:'potion', name:'Healing Potion', effect:'heal', amount:25, glyph:'!', color:'purple', desc:'Restore 25 HP.', rarity:'common'},
         'bomb': {kind:'bomb', name:'Bomb', effect:'bomb', damage:18, radius:1, glyph:'*', color:'red', desc:'Explodes, damaging nearby foes.', rarity:'common'},
         'scroll': {kind:'scroll', name:'Scroll of Light', effect:'light', bonus:3, turns:20, glyph:'?', color:'yellow', desc:'Boost vision radius temporarily.', rarity:'common'},
@@ -22,7 +22,7 @@ function itemDataFor(type) {
  * Create an item entity from item data
  */
 function createItemFromData(data, x, y) {
-    var eid = createEntity();
+    const eid = createEntity();
     addComponent(eid, 'position', {x: x, y: y});
     addComponent(eid, 'item', JSON.parse(JSON.stringify(data)));
     addComponent(eid, 'descriptor', {name: data.name, glyph: data.glyph, color: data.color});
@@ -43,11 +43,11 @@ function createItem(type, x, y) {
 function spawnItemsAvoiding(px, py) {
     for (let i = 0; i < Game.world.rooms.length; i++) {
         if (Math.random() < 0.5) {
-            var r = rooms[i];
-            var x = randInt(r.x, r.x + r.width - 1);
-            var y = randInt(r.y, r.y + r.height - 1);
+            const r = Game.world.rooms[i];
+            const x = randInt(r.x, r.x + r.width - 1);
+            const y = randInt(r.y, r.y + r.height - 1);
             if (x === px && y === py) continue;
-            var types = ['potion', 'bomb', 'scroll'];
+            const types = ['potion', 'bomb', 'scroll'];
             createItem(types[randInt(0, types.length - 1)], x, y);
         }
     }
@@ -57,21 +57,21 @@ function spawnItemsAvoiding(px, py) {
  * Drop loot when an entity dies
  */
 function dropLoot(victimId) {
-    var loot = getComponent(victimId, 'lootTable');
-    var pos = getComponent(victimId, 'position');
+    const loot = getComponent(victimId, 'lootTable');
+    const pos = getComponent(victimId, 'position');
     if (!loot || !pos) return;
     
-    var floorBonus = Math.abs(floor) * 0.05;
+    const floorBonus = Math.abs(Game.state.floor) * 0.05;
     
-    for (var i = 0; i < loot.drops.length; i++) {
-        var drop = loot.drops[i];
-        var chance = Math.min(drop.chance + floorBonus, 0.95);
+    for (let i = 0; i < loot.drops.length; i++) {
+        const drop = loot.drops[i];
+        const chance = Math.min(drop.chance + floorBonus, 0.95);
         
         if (Math.random() < chance) {
             if (drop.type === 'gold') {
-                var amount = randInt(drop.amount[0], drop.amount[1]);
-                amount = Math.floor(amount * (1 + Math.abs(floor) * 0.2));
-                var goldData = itemDataFor('gold');
+                let amount = randInt(drop.amount[0], drop.amount[1]);
+                amount = Math.floor(amount * (1 + Math.abs(Game.state.floor) * 0.2));
+                const goldData = itemDataFor('gold');
                 goldData.amount = amount;
                 goldData.name = amount + ' Gold';
                 createItemFromData(goldData, pos.x, pos.y);
@@ -86,19 +86,19 @@ function dropLoot(victimId) {
  * Pick up all items at the specified position
  */
 function pickupItemsAt(x, y) {
-    var inv = getComponent(playerEid, 'inventory');
+    const inv = getComponent(Game.world.playerEid, 'inventory');
     if (!inv) return;
-    var here = getEntitiesAt(x, y);
-    for (var i = 0; i < here.length; i++) {
-        var eid = here[i];
-        if (eid === playerEid) continue;
-        var item = getComponent(eid, 'item');
+    const here = getEntitiesAt(x, y);
+    for (let i = 0; i < here.length; i++) {
+        const eid = here[i];
+        if (eid === Game.world.playerEid) continue;
+        const item = getComponent(eid, 'item');
         if (item) {
             if (item.effect === 'gold') {
-                var amount = item.amount || 1;
-                playerGold += amount;
-                gameStats.goldCollected += amount;
-                addMessage('Picked up ' + amount + ' gold! (Total: ' + playerGold + ')');
+                const amount = item.amount || 1;
+                Game.state.playerGold += amount;
+                Game.stats.goldCollected += amount;
+                addMessage('Picked up ' + amount + ' gold! (Total: ' + Game.state.playerGold + ')');
                 destroyEntity(eid);
             } else {
                 if (inv.items.length >= inv.capacity) { 
@@ -106,12 +106,12 @@ function pickupItemsAt(x, y) {
                     continue; 
                 }
                 inv.items.push(JSON.parse(JSON.stringify(item)));
-                var name = item.name || 'item';
-                var rarity = item.rarity || 'common';
-                var color = rarity === 'epic' ? 'Epic ' : rarity === 'rare' ? 'Rare ' : '';
+                const name = item.name || 'item';
+                const rarity = item.rarity || 'common';
+                const color = rarity === 'epic' ? 'Epic ' : rarity === 'rare' ? 'Rare ' : '';
                 destroyEntity(eid);
                 addMessage('Picked up ' + color + name + '.');
-                gameStats.itemsPickedUp++;
+                Game.stats.itemsPickedUp++;
             }
         }
     }
@@ -121,54 +121,54 @@ function pickupItemsAt(x, y) {
  * Use an item from the player's inventory
  */
 function useInventoryItem(index) {
-    var inv = getComponent(playerEid, 'inventory');
+    const inv = getComponent(Game.world.playerEid, 'inventory');
     if (!inv || index < 0 || index >= inv.items.length) return false;
-    var it = inv.items[index];
-    var used = false;
-    var hp = getComponent(playerEid, 'health');
-    var st = getComponent(playerEid, 'status');
-    var stats = getComponent(playerEid, 'stats');
+    const it = inv.items[index];
+    let used = false;
+    const hp = getComponent(Game.world.playerEid, 'health');
+    const st = getComponent(Game.world.playerEid, 'status');
+    const stats = getComponent(Game.world.playerEid, 'stats');
     
     switch (it.effect) {
         case 'heal':
             if (!hp) break;
-            var before = hp.hp;
+            const before = hp.hp;
             hp.hp = clamp(hp.hp + (it.amount || 0), 0, hp.maxHp);
-            var healed = hp.hp - before;
+            const healed = hp.hp - before;
             addMessage('You quaff the potion (+' + healed + ' HP).');
-            gameStats.potionsUsed++;
+            Game.stats.potionsUsed++;
             used = true; 
             break;
             
         case 'bomb':
-            var ppos = getComponent(playerEid, 'position');
+            const ppos = getComponent(Game.world.playerEid, 'position');
             if (!ppos) break;
-            var rad = it.radius || 1;
-            var dmg = it.damage || 15;
-            var hit = 0;
+            const rad = it.radius || 1;
+            const dmg = it.damage || 15;
+            let hit = 0;
             
             // Create explosion visual effect
-            createExplosion(ppos.x, ppos.y, rad);  // <-- ADD THIS LINE
+            createExplosion(ppos.x, ppos.y, rad);
             
-            for (var dy = -rad; dy <= rad; dy++) {
-                for (var dx = -rad; dx <= rad; dx++) {
+            for (let dy = -rad; dy <= rad; dy++) {
+                for (let dx = -rad; dx <= rad; dx++) {
                     if (dx === 0 && dy === 0) continue;
-                    var tx = ppos.x + dx, ty = ppos.y + dy;
+                    const tx = ppos.x + dx, ty = ppos.y + dy;
                     if (!inBounds(tx, ty)) continue;
-                    var ents = getEntitiesAt(tx, ty);
-                    for (var e = 0; e < ents.length; e++) {
-                        var eid = ents[e];
-                        if (eid === playerEid) continue;
-                        var th = getComponent(eid, 'health');
-                        var td = getComponent(eid, 'descriptor');
+                    const ents = getEntitiesAt(tx, ty);
+                    for (let e = 0; e < ents.length; e++) {
+                        const eid = ents[e];
+                        if (eid === Game.world.playerEid) continue;
+                        const th = getComponent(eid, 'health');
+                        const td = getComponent(eid, 'descriptor');
                         if (th && th.hp > 0) {
                             th.hp -= dmg; 
                             hit++;
-                            gameStats.totalDamageDealt += dmg;
+                            Game.stats.totalDamageDealt += dmg;
                             addMessage('The bomb hits ' + (td ? td.name : 'enemy') + ' for ' + dmg + '!');
                             if (th.hp <= 0) { 
                                 addMessage((td ? td.name : 'enemy') + ' defeated!'); 
-                                onKill(eid, playerEid); 
+                                onKill(eid, Game.world.playerEid); 
                             }
                         }
                     }
@@ -176,62 +176,65 @@ function useInventoryItem(index) {
             }
             if (hit > 0) { 
                 used = true; 
-                playerAttackedThisTurn = true; 
+                Game.state.playerAttackedThisTurn = true; 
             } else { 
                 addMessage('The bomb fizzles harmlessly.'); 
                 used = true; 
             }
-            gameStats.bombsUsed++;
+            Game.stats.bombsUsed++;
             break;
             
         case 'light':
-            var v = getComponent(playerEid, 'vision');
+            const v = getComponent(Game.world.playerEid, 'vision');
             if (v) {
-                var bonus = it.bonus || 3;
-                var turns = it.turns || 20;
+                const bonus = it.bonus || 3;
+                const turns = it.turns || 20;
                 v.radius = (v.baseRadius || v.radius) + bonus;
                 if (!st) { 
-                    st = {lightBoost: 0}; 
-                    addComponent(playerEid, 'status', st); 
+                    const newStatus = {lightBoost: 0}; 
+                    addComponent(Game.world.playerEid, 'status', newStatus); 
                 }
-                st.lightBoost = turns;
+                const status = getComponent(Game.world.playerEid, 'status');
+                status.lightBoost = turns;
                 addMessage('A brilliant light surrounds you! (+' + bonus + ' vision for ' + turns + ' turns)');
-                gameStats.scrollsUsed++;
+                Game.stats.scrollsUsed++;
                 used = true;
             }
             break;
             
         case 'speed':
             if (!st) { 
-                st = {speedBoost: 0}; 
-                addComponent(playerEid, 'status', st); 
+                const newStatus = {speedBoost: 0}; 
+                addComponent(Game.world.playerEid, 'status', newStatus); 
             }
-            st.speedBoost = it.turns || 15;
-            addMessage('You feel much faster! (Extra action every other turn for ' + st.speedBoost + ' turns)');
-            gameStats.potionsUsed++;
+            const status = getComponent(Game.world.playerEid, 'status');
+            status.speedBoost = it.turns || 15;
+            addMessage('You feel much faster! (Extra action every other turn for ' + status.speedBoost + ' turns)');
+            Game.stats.potionsUsed++;
             used = true;
             break;
             
         case 'strength':
             if (!st) { 
-                st = {strengthBoost: 0}; 
-                addComponent(playerEid, 'status', st); 
+                const newStatus = {strengthBoost: 0}; 
+                addComponent(Game.world.playerEid, 'status', newStatus); 
             }
             if (!stats) break;
-            st.strengthBoost = it.turns || 20;
-            st.strengthBonusAmount = it.bonus || 5;
-            stats.strength += st.strengthBonusAmount;
-            addMessage('You feel stronger! (+' + st.strengthBonusAmount + ' STR for ' + st.strengthBoost + ' turns)');
-            gameStats.potionsUsed++;
+            const strengthStatus = getComponent(Game.world.playerEid, 'status');
+            strengthStatus.strengthBoost = it.turns || 20;
+            strengthStatus.strengthBonusAmount = it.bonus || 5;
+            stats.strength += strengthStatus.strengthBonusAmount;
+            addMessage('You feel stronger! (+' + strengthStatus.strengthBonusAmount + ' STR for ' + strengthStatus.strengthBoost + ' turns)');
+            Game.stats.potionsUsed++;
             used = true;
             break;
             
         case 'vision':
-            var v = getComponent(playerEid, 'vision');
-            if (v) {
-                var bonus = it.bonus || 2;
-                v.radius += bonus;
-                v.baseRadius = v.radius;
+            const visionComp = getComponent(Game.world.playerEid, 'vision');
+            if (visionComp) {
+                const bonus = it.bonus || 2;
+                visionComp.radius += bonus;
+                visionComp.baseRadius = visionComp.radius;
                 addMessage('Your vision expands permanently! (+' + bonus + ' vision radius)');
                 used = true;
             }
@@ -251,13 +254,13 @@ function useInventoryItem(index) {
  * Drop an item from the player's inventory
  */
 function dropInventoryItem(index) {
-    var inv = getComponent(playerEid, 'inventory');
-    var ppos = getComponent(playerEid, 'position');
+    const inv = getComponent(Game.world.playerEid, 'inventory');
+    const ppos = getComponent(Game.world.playerEid, 'position');
     if (!inv || !ppos || index < 0 || index >= inv.items.length) return false;
-    var data = inv.items[index];
+    const data = inv.items[index];
     createItemFromData(data, ppos.x, ppos.y);
     addMessage('Dropped ' + (data.name || 'item') + '.');
     inv.items.splice(index, 1);
-    gameStats.itemsDropped++;
+    Game.stats.itemsDropped++;
     return true;
 }
