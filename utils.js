@@ -1,5 +1,5 @@
 /** =========================
- *  Utility Functions - Using Game Namespace
+ *  Utility Functions - Complete Final Version
  *  ========================= */
 
 /**
