@@ -1,5 +1,5 @@
 /** =========================
- *  Game Systems Module - Complete Final Version
+ *  Game Systems Module
  *  ========================= */
 
 Game.Systems = (function() {
