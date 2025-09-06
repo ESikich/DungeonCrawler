@@ -52,18 +52,18 @@ Game.Systems = (function() {
             }
         },
         
-        // Combat System
+        // Combat System - FIXED DEATH ATTRIBUTION
         Combat: {
             handleAttack(attackerId, targetId) {
                 const as = Game.ECS.getComponent(attackerId, 'stats');
                 const th = Game.ECS.getComponent(targetId, 'health');
                 const td = Game.ECS.getComponent(targetId, 'descriptor');
-                const ad = Game.ECS.getComponent(attackerId, 'descriptor'); // Get attacker name
+                const ad = Game.ECS.getComponent(attackerId, 'descriptor'); // ADDED: Get attacker descriptor
                 if (!as || !th) return;
-        
+
                 const dmg = randInt(3, 8) + Math.floor(as.strength / 3);
                 th.hp -= dmg;
-        
+
                 // Track stats
                 if (attackerId === Game.world.playerEid) {
                     Game.state.playerAttackedThisTurn = true;
@@ -72,18 +72,18 @@ Game.Systems = (function() {
                 } else if (targetId === Game.world.playerEid) {
                     Game.stats.totalDamageTaken += dmg;
                 }
-        
+
                 const targetName = td ? td.name : 'enemy';
-                const attackerName = ad ? ad.name : 'attacker';
+                const attackerName = ad ? ad.name : 'attacker'; // ADDED: Get attacker name
                 addMessage('Dealt ' + dmg + ' damage to ' + targetName + '!');
-        
+
                 if (th.hp <= 0) {
                     addMessage(targetName + ' defeated!');
                     
                     if (targetId === Game.world.playerEid) {
-                        // FIXED: Use attacker's name, not target's name
+                        // FIXED: Use attackerName instead of targetName
                         Game.stats.deathCause = 'Combat';
-                        Game.stats.killedBy = attackerName; // This was the bug!
+                        Game.stats.killedBy = attackerName; // This was the bug - was using targetName (Hero)
                         Game.stats.endTime = Date.now();
                         Game.state.gameOver = true;
                         Game.state.current = 'gameOver';
