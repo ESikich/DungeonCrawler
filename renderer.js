@@ -11,176 +11,22 @@ Game.Renderer = (function() {
     let lightCanvas = null;
     let lightCtx = null;
     
-    // Rendering constants
-    const HUD_HEIGHT = 120;
-    const HUD_MARGIN = 12;
-    const BAR_HEIGHT = 14;
-    const HEALTH_BAR_WIDTH = 160;
-    const XP_BAR_WIDTH = 140;
-    
-    // Color constants
-    const COLORS = {
-        hudBackground: 'rgba(16,16,32,0.95)',
-        hudBorder: '#444',
-        healthBg: '#400',
-        healthGood: '#4a4',
-        healthWarn: '#aa4',
-        healthBad: '#a44',
-        xpBg: '#222',
-        xpBar: '#58a6ff',
-        xpText: '#9cf',
-        gold: '#ffcc00',
-        stats: '#ccc',
-        statusEffects: '#88ff88',
-        gameInfo: '#999',
-        inventory: '#9cf',
-        controls: '#666',
-        debug: '#555'
-    };
-    
     // Private helper functions
-    function drawBar(x, y, width, height, fillPercent, bgColor, fillColor, borderColor = '#888') {
-        // Background
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(x, y, width, height);
-        
-        // Fill
-        if (fillPercent > 0) {
-            ctx.fillStyle = fillColor;
-            ctx.fillRect(x, y, width * fillPercent, height);
-        }
-        
-        // Border
-        ctx.strokeStyle = borderColor;
-        ctx.strokeRect(x, y, width, height);
-    }
-    
-    function getHealthColor(hp, maxHp) {
-        const ratio = hp / maxHp;
-        if (ratio > 0.6) return COLORS.healthGood;
-        if (ratio > 0.3) return COLORS.healthWarn;
-        return COLORS.healthBad;
-    }
-    
-    function rightAlignText(text, rightX, y, color = 'white') {
-        const oldFillStyle = ctx.fillStyle;
+    function renderGlyph(glyph, x, y, color) {
+        ctx.font = `${Game.config.TILE_SIZE - 4}px monospace`;
         ctx.fillStyle = color;
-        const textWidth = ctx.measureText(text).width;
-        ctx.fillText(text, rightX - textWidth, y);
-        ctx.fillStyle = oldFillStyle;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(glyph, x + Game.config.TILE_SIZE / 2, y + Game.config.TILE_SIZE / 2);
     }
     
-    function centerText(text, centerX, y, color = 'white') {
-        const oldFillStyle = ctx.fillStyle;
-        ctx.fillStyle = color;
-        const textWidth = ctx.measureText(text).width;
-        ctx.fillText(text, centerX - textWidth / 2, y);
-        ctx.fillStyle = oldFillStyle;
-    }
-    
-    // HUD rendering components
-    const HUDComponents = {
-        renderBackground(hudY) {
-            ctx.fillStyle = COLORS.hudBackground;
-            ctx.fillRect(0, hudY, canvas.width, HUD_HEIGHT);
-            ctx.strokeStyle = COLORS.hudBorder;
-            ctx.lineWidth = 1;
-            ctx.strokeRect(0, hudY, canvas.width, HUD_HEIGHT);
-        },
-        
-        renderHealthSection(x, y, hp) {
-            // Health text
-            ctx.font = '16px monospace';
-            ctx.fillStyle = 'white';
-            ctx.fillText(`HP: ${hp.hp}/${hp.maxHp}`, x, y + 18);
-            
-            // Health bar
-            const barX = x + 100;
-            const barY = y + 6;
-            const fillPercent = hp.maxHp > 0 ? hp.hp / hp.maxHp : 0;
-            const fillColor = getHealthColor(hp.hp, hp.maxHp);
-            
-            drawBar(barX, barY, HEALTH_BAR_WIDTH, BAR_HEIGHT, fillPercent, COLORS.healthBg, fillColor);
-            
-            return barX + HEALTH_BAR_WIDTH;
-        },
-        
-        renderXPSection(x, y, prog) {
-            if (!prog) return x;
-            
-            // Level label
-            ctx.font = '14px monospace';
-            ctx.fillStyle = COLORS.xpText;
-            ctx.fillText(`LVL ${prog.level}`, x, y + 16);
-            
-            // XP bar
-            const barY = y + 6;
-            const fillPercent = Math.min(1, prog.xp / Math.max(1, prog.next));
-            
-            drawBar(x, barY, XP_BAR_WIDTH, 12, fillPercent, COLORS.xpBg, COLORS.xpBar, '#666');
-            
-            // XP text overlay
-            ctx.font = '11px monospace';
-            ctx.fillStyle = COLORS.xpText;
-            ctx.fillText(`XP: ${prog.xp}/${prog.next}`, x + 2, barY + 9);
-            
-            return x + XP_BAR_WIDTH;
-        },
-        
-        renderGoldSection(y, gold) {
-            ctx.font = '16px monospace';
-            rightAlignText(`Gold: ${gold}`, canvas.width - HUD_MARGIN, y + 18, COLORS.gold);
-        },
-        
-        renderStatsSection(y, stats, statusEffects) {
-            if (!stats) return;
-            
-            ctx.font = '14px monospace';
-            
-            // Base stats (left side)
-            const statText = `STR:${stats.strength}  AGI:${stats.agility}  ACC:${stats.accuracy}  EVA:${stats.evasion}`;
-            ctx.fillStyle = COLORS.stats;
-            ctx.fillText(statText, HUD_MARGIN, y);
-            
-            // Status effects (right side)
-            if (statusEffects) {
-                let statusText = '';
-                if (statusEffects.strengthBoost > 0) statusText += `[STR+${statusEffects.strengthBoost}] `;
-                if (statusEffects.speedBoost > 0) statusText += `[SPD+${statusEffects.speedBoost}] `;
-                if (statusEffects.lightBoost > 0) statusText += `[VIS+${statusEffects.lightBoost}] `;
-                
-                if (statusText.trim()) {
-                    rightAlignText(statusText.trim(), canvas.width - HUD_MARGIN, y, COLORS.statusEffects);
-                }
-            }
-        },
-        
-        renderGameInfoSection(y, gameState, prog, inv) {
-            ctx.font = '12px monospace';
-            
-            // Left: Game info
-            const gameInfoText = `Turn: ${gameState.turnCount}  Floor: ${gameState.floor}  Level: ${prog ? prog.level : 1}`;
-            ctx.fillStyle = COLORS.gameInfo;
-            ctx.fillText(gameInfoText, HUD_MARGIN, y);
-            
-            // Center: Inventory
-            if (inv) {
-                const invText = `Inventory: ${inv.items.length}/${inv.capacity} (Press I)`;
-                centerText(invText, canvas.width / 2, y, COLORS.inventory);
-            }
-            
-            // Right: Controls
-            rightAlignText('R:Restart  ESC:Pause', canvas.width - HUD_MARGIN, y, COLORS.controls);
-        },
-        
-        renderDebugSection(y, playerEid) {
-            ctx.font = '10px monospace';
-            const visibleCount = Game.ECS.getComponent(playerEid, 'vision')?.visible.size || 0;
-            const debugText = `Entities: ${Game.ECS.getEntityCount()}  Visible: ${visibleCount}`;
-            ctx.fillStyle = COLORS.debug;
-            ctx.fillText(debugText, HUD_MARGIN, y);
+    function getItemRarityColor(rarity) {
+        switch (rarity) {
+            case 'epic': return '#ff99ff';
+            case 'rare': return '#99ccff';
+            default: return '#fff';
         }
-    };
+    }
     
     // Public API
     return {
@@ -223,12 +69,15 @@ Game.Renderer = (function() {
         
         // Render game view
         renderGameView(gameState, world, playerEid) {
+            // Core game rendering
             this.renderDungeon(world, playerEid);
             this.renderEntities(playerEid);
             this.renderExplosions(Game.effects.explosions);
             this.renderLighting(playerEid);
-            this.renderHUD(gameState, playerEid);
-            this.renderMessages(world.messages);
+            
+            // UI rendering (delegated to HUD module)
+            Game.HUD.render(ctx, gameState, playerEid);
+            Game.HUD.renderMessages(ctx, world.messages);
             
             // Overlays
             if (gameState.uiMode === 'inventory') {
@@ -283,7 +132,7 @@ Game.Renderer = (function() {
                 ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
                 
                 if (tile.glyph && tile.glyph !== '.') {
-                    this.renderGlyph(tile.glyph, screenX, screenY, tile.glyph === '>' ? 'gold' : 'white');
+                    renderGlyph(tile.glyph, screenX, screenY, tile.glyph === '>' ? 'gold' : 'white');
                 }
             } else if (isSeen) {
                 // Memory (dimmed)
@@ -295,14 +144,6 @@ Game.Renderer = (function() {
                 ctx.fillStyle = 'rgb(20,20,30)';
                 ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
             }
-        },
-        
-        renderGlyph(glyph, x, y, color) {
-            ctx.font = `${Game.config.TILE_SIZE - 4}px monospace`;
-            ctx.fillStyle = color;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(glyph, x + Game.config.TILE_SIZE / 2, y + Game.config.TILE_SIZE / 2);
         },
         
         // Entity rendering
@@ -354,13 +195,26 @@ Game.Renderer = (function() {
             const barX = x + 2;
             const barY = y - 2;
             
-            const fillPercent = hp.hp / hp.maxHp;
-            const fillColor = getHealthColor(hp.hp, hp.maxHp);
+            // Background
+            ctx.fillStyle = 'rgba(100,0,0,0.8)';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
             
-            drawBar(barX, barY, barWidth, barHeight, fillPercent, 'rgba(100,0,0,0.8)', fillColor.replace('#', 'rgba(').replace('4a4', '0,255,0,0.8').replace('aa4', '255,255,0,0.8').replace('a44', '255,0,0,0.8'));
+            // Fill
+            const fillPercent = hp.hp / hp.maxHp;
+            const fillWidth = barWidth * fillPercent;
+            
+            if (fillPercent > 0.6) {
+                ctx.fillStyle = 'rgba(0,255,0,0.8)';
+            } else if (fillPercent > 0.3) {
+                ctx.fillStyle = 'rgba(255,255,0,0.8)';
+            } else {
+                ctx.fillStyle = 'rgba(255,0,0,0.8)';
+            }
+            
+            ctx.fillRect(barX, barY, fillWidth, barHeight);
         },
         
-        // Lighting system
+        // Lighting system with improved LOS edge visibility
         renderLighting(playerEid) {
             const pos = Game.ECS.getComponent(playerEid, 'position');
             const vision = Game.ECS.getComponent(playerEid, 'vision');
@@ -406,24 +260,31 @@ Game.Renderer = (function() {
             lightCtx.fill();
         },
         
+        // IMPROVED: LOS edge visibility matches memory level
         renderVisionGradient(pos, vision) {
             const centerX = (pos.x + 0.5) * Game.config.TILE_SIZE;
             const centerY = (pos.y + 0.5) * Game.config.TILE_SIZE;
             const radius = vision.radius * Game.config.TILE_SIZE;
             
+            // Create the main gradient
             const gradient = lightCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
             const gamma = 2.2;
             const alphaFunction = t => 1 - Math.pow(t, gamma);
+            
+            // Memory reveal value (what non-LOS areas show)
+            const memoryReveal = Game.config.MEMORY_REVEAL;
             
             gradient.addColorStop(0.00, `rgba(0,0,0,${alphaFunction(0.00)})`);
             gradient.addColorStop(0.50, `rgba(0,0,0,${alphaFunction(0.50)})`);
             gradient.addColorStop(0.75, `rgba(0,0,0,${alphaFunction(0.75)})`);
             gradient.addColorStop(0.90, `rgba(0,0,0,${alphaFunction(0.90)})`);
-            gradient.addColorStop(1.00, 'rgba(0,0,0,0)');
+            // IMPROVED: Instead of going to 0, stop at memory reveal level
+            gradient.addColorStop(1.00, `rgba(0,0,0,${memoryReveal})`);
             
             lightCtx.save();
             lightCtx.beginPath();
             
+            // Create visibility mask
             vision.visible.forEach(key => {
                 const [x, y] = key.split(',').map(Number);
                 const tileX = x * Game.config.TILE_SIZE;
@@ -437,73 +298,6 @@ Game.Renderer = (function() {
             lightCtx.fillRect(0, 0, Game.config.DUNGEON_PIXEL_WIDTH, Game.config.DUNGEON_PIXEL_HEIGHT);
             lightCtx.restore();
             lightCtx.globalCompositeOperation = 'source-over';
-        },
-        
-        // HUD rendering (refactored)
-        renderHUD(gameState, playerEid) {
-            const components = this.getHUDComponents(playerEid);
-            if (!components.health) return;
-            
-            const hudY = canvas.height - HUD_HEIGHT;
-            
-            // Background
-            HUDComponents.renderBackground(hudY);
-            
-            // Row 1: Health, XP, Gold
-            const topRowY = hudY + HUD_MARGIN;
-            let nextX = HUDComponents.renderHealthSection(HUD_MARGIN, topRowY, components.health);
-            nextX = HUDComponents.renderXPSection(nextX + 20, topRowY, components.progress) + 20;
-            HUDComponents.renderGoldSection(topRowY, gameState.playerGold);
-            
-            // Row 2: Stats and Status Effects
-            const middleRowY = topRowY + 32;
-            HUDComponents.renderStatsSection(middleRowY, components.stats, components.status);
-            
-            // Row 3: Game Info, Inventory, Controls
-            const bottomRowY = middleRowY + 20;
-            HUDComponents.renderGameInfoSection(bottomRowY, gameState, components.progress, components.inventory);
-            
-            // Row 4: Debug Info
-            const debugRowY = bottomRowY + 16;
-            HUDComponents.renderDebugSection(debugRowY, playerEid);
-        },
-        
-        getHUDComponents(playerEid) {
-            return {
-                health: Game.ECS.getComponent(playerEid, 'health'),
-                stats: Game.ECS.getComponent(playerEid, 'stats'),
-                inventory: Game.ECS.getComponent(playerEid, 'inventory'),
-                progress: Game.ECS.getComponent(playerEid, 'progress'),
-                status: Game.ECS.getComponent(playerEid, 'status')
-            };
-        },
-        
-        // Messages
-        renderMessages(messages) {
-            if (messages.length === 0) return;
-            
-            const hudY = canvas.height - HUD_HEIGHT;
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'right';
-            
-            const lineHeight = 14;
-            let y = hudY + HUD_HEIGHT - HUD_MARGIN - 20;
-            const maxMessages = 3;
-            const startIndex = Math.max(0, messages.length - maxMessages);
-            
-            for (let i = messages.length - 1; i >= startIndex; i--) {
-                const message = messages[i];
-                const age = Date.now() - message.time;
-                const alpha = Math.max(0.3, 1 - (age / 5000));
-                
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = '#ddd';
-                ctx.fillText(message.text, canvas.width - HUD_MARGIN, y);
-                ctx.globalAlpha = 1;
-                y -= lineHeight;
-            }
-            
-            ctx.textAlign = 'left';
         },
         
         // Explosions
@@ -627,7 +421,7 @@ Game.Renderer = (function() {
                 
                 // Item text
                 const item = inventory.items[i];
-                const rarityColor = this.getItemRarityColor(item.rarity);
+                const rarityColor = getItemRarityColor(item.rarity);
                 ctx.fillStyle = rarityColor;
                 ctx.fillText(`${(i + 1)}. ${item.name || 'Item'}`, x, itemY);
             }
@@ -639,14 +433,6 @@ Game.Renderer = (function() {
                 ctx.fillStyle = '#9cf';
                 ctx.textBaseline = 'top';
                 ctx.fillText(`Details: ${selectedItem.desc || 'No description.'}`, x, y + height - 20);
-            }
-        },
-        
-        getItemRarityColor(rarity) {
-            switch (rarity) {
-                case 'epic': return '#ff99ff';
-                case 'rare': return '#99ccff';
-                default: return '#fff';
             }
         },
         
@@ -770,7 +556,6 @@ Game.Renderer = (function() {
         
         // Getters for external access
         getCanvas() { return canvas; },
-        getContext() { return ctx; },
-        getHUDHeight() { return HUD_HEIGHT; }
+        getContext() { return ctx; }
     };
 })();
