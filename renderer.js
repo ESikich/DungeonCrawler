@@ -496,6 +496,11 @@ Game.Renderer = (function() {
         },
         
         renderExplosions(explosions) {
+            // Safety check - ensure explosions array exists
+            if (!explosions || !Array.isArray(explosions)) {
+                return;
+            }
+            
             const now = Date.now();
             
             for (let i = 0; i < explosions.length; i++) {
