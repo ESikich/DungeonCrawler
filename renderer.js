@@ -1,5 +1,5 @@
 /** =========================
- *  Renderer Module - Complete Final Version
+ *  Renderer Module
  *  ========================= */
 
 Game.Renderer = (function() {
@@ -217,6 +217,7 @@ Game.Renderer = (function() {
             ctx.drawImage(lightCanvas, 0, 0);
         },
         
+        // IMPROVED HUD LAYOUT
         renderHUD(gameState, playerEid) {
             const hp = Game.ECS.getComponent(playerEid, 'health');
             const stats = Game.ECS.getComponent(playerEid, 'stats');
@@ -225,8 +226,10 @@ Game.Renderer = (function() {
             const st = Game.ECS.getComponent(playerEid, 'status');
             if (!hp) return;
             
-            const uiH = 100;
+            const uiH = 120; // Increased height for better spacing
             const hudY = canvas.height - uiH;
+            
+            // Background
             ctx.fillStyle = 'rgba(16,16,32,0.95)';
             ctx.fillRect(0, hudY, canvas.width, uiH);
             ctx.strokeStyle = '#444';
@@ -234,80 +237,135 @@ Game.Renderer = (function() {
             ctx.strokeRect(0, hudY, canvas.width, uiH);
 
             const margin = 12;
-            const textY = hudY + margin + 28;
+            
+            // === TOP ROW: Health and XP bars ===
+            const topRowY = hudY + margin;
+            
+            // Health section (left side)
             ctx.font = '16px monospace';
             ctx.fillStyle = 'white';
-            ctx.fillText('HP: ' + hp.hp + '/' + hp.maxHp, margin, textY);
+            ctx.fillText('HP: ' + hp.hp + '/' + hp.maxHp, margin, topRowY + 18);
             
             // Health bar
-            const barX = margin + 100;
-            const barW = 180;
-            const barH = 12;
-            const barY = textY - 10;
+            const healthBarX = margin + 100;
+            const healthBarW = 160;
+            const healthBarH = 14;
+            const healthBarY = topRowY + 6;
+            
             ctx.fillStyle = '#400';
-            ctx.fillRect(barX, barY, barW, barH);
+            ctx.fillRect(healthBarX, healthBarY, healthBarW, healthBarH);
             if (hp.maxHp > 0) {
-                const fw = (hp.hp / hp.maxHp) * barW;
-                const col = hp.hp > hp.maxHp * 0.6 ? '#4a4' : hp.hp > hp.maxHp * 0.3 ? '#aa4' : '#a44';
-                ctx.fillStyle = col;
-                ctx.fillRect(barX, barY, fw, barH);
+                const healthFill = (hp.hp / hp.maxHp) * healthBarW;
+                const healthColor = hp.hp > hp.maxHp * 0.6 ? '#4a4' : hp.hp > hp.maxHp * 0.3 ? '#aa4' : '#a44';
+                ctx.fillStyle = healthColor;
+                ctx.fillRect(healthBarX, healthBarY, healthFill, healthBarH);
             }
             ctx.strokeStyle = '#888';
-            ctx.strokeRect(barX, barY, barW, barH);
+            ctx.strokeRect(healthBarX, healthBarY, healthBarW, healthBarH);
 
-            // XP bar
+            // XP section (right side of health)
             if (prog) {
-                const xpY = barY + 18;
-                const xpw = 180;
-                const xpx = barX;
-                ctx.fillStyle = '#222';
-                ctx.fillRect(xpx, xpY, xpw, 8);
-                const fp = Math.min(1, prog.xp / Math.max(1, prog.next));
-                ctx.fillStyle = '#58a6ff';
-                ctx.fillRect(xpx, xpY, xpw * fp, 8);
-                ctx.strokeStyle = '#666';
-                ctx.strokeRect(xpx, xpY, xpw, 8);
-                ctx.font = '12px monospace';
+                const xpX = healthBarX + healthBarW + 20;
+                const xpW = 140;
+                const xpY = healthBarY;
+                
+                // XP label
+                ctx.font = '14px monospace';
                 ctx.fillStyle = '#9cf';
-                ctx.fillText('LVL ' + prog.level + '  XP ' + prog.xp + '/' + prog.next, xpx + xpw + 10, xpY + 8);
+                ctx.fillText('LVL ' + prog.level, xpX, topRowY + 16);
+                
+                // XP bar
+                ctx.fillStyle = '#222';
+                ctx.fillRect(xpX, xpY, xpW, 12);
+                const xpFill = Math.min(1, prog.xp / Math.max(1, prog.next));
+                ctx.fillStyle = '#58a6ff';
+                ctx.fillRect(xpX, xpY, xpW * xpFill, 12);
+                ctx.strokeStyle = '#666';
+                ctx.strokeRect(xpX, xpY, xpW, 12);
+                
+                // XP text
+                ctx.font = '11px monospace';
+                ctx.fillStyle = '#9cf';
+                ctx.fillText('XP: ' + prog.xp + '/' + prog.next, xpX + 2, xpY + 9);
             }
 
-            // Gold
-            ctx.font = '14px monospace';
+            // Gold (far right)
+            ctx.font = '16px monospace';
             ctx.fillStyle = '#ffcc00';
-            ctx.fillText('Gold: ' + gameState.playerGold, margin + 500, textY);
+            const goldX = canvas.width - 140;
+            ctx.fillText('Gold: ' + gameState.playerGold, goldX, topRowY + 18);
 
-            // Stats and info
-            const y = textY + 20;
-            ctx.font = '12px monospace';
+            // === MIDDLE ROW: Stats ===
+            const middleRowY = topRowY + 32;
+            
             if (stats) {
+                ctx.font = '14px monospace';
                 ctx.fillStyle = '#ccc';
-                let statStr = 'STR:' + stats.strength + ' AGI:' + stats.agility + ' ACC:' + stats.accuracy + ' EVA:' + stats.evasion;
+                
+                // Base stats
+                let statText = 'STR:' + stats.strength + '  AGI:' + stats.agility + '  ACC:' + stats.accuracy + '  EVA:' + stats.evasion;
+                ctx.fillText(statText, margin, middleRowY);
+                
+                // Status effects (right aligned)
                 if (st) {
-                    if (st.strengthBoost > 0) statStr += ' [STR+]';
-                    if (st.speedBoost > 0) statStr += ' [SPD+]';
-                    if (st.lightBoost > 0) statStr += ' [VIS+]';
+                    let statusText = '';
+                    if (st.strengthBoost > 0) statusText += '[STR+' + st.strengthBoost + '] ';
+                    if (st.speedBoost > 0) statusText += '[SPD+' + st.speedBoost + '] ';
+                    if (st.lightBoost > 0) statusText += '[VIS+' + st.lightBoost + '] ';
+                    
+                    if (statusText) {
+                        ctx.fillStyle = '#88ff88';
+                        const statusX = canvas.width - ctx.measureText(statusText).width - margin;
+                        ctx.fillText(statusText.trim(), statusX, middleRowY);
+                    }
                 }
-                ctx.fillText(statStr, margin, y);
             }
+
+            // === BOTTOM ROW: Game info and inventory ===
+            const bottomRowY = middleRowY + 20;
+            
+            // Left side: Game info
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#999';
+            const gameInfoText = 'Turn: ' + gameState.turnCount + '  Floor: ' + gameState.floor + '  Level: ' + (prog ? prog.level : 1);
+            ctx.fillText(gameInfoText, margin, bottomRowY);
+            
+            // Center: Inventory info
             if (inv) {
                 ctx.fillStyle = '#9cf';
-                ctx.fillText('Items: ' + inv.items.length + '/' + inv.capacity + ' (press I)', margin + 360, y);
+                const invText = 'Inventory: ' + inv.items.length + '/' + inv.capacity + ' (Press I)';
+                const invTextWidth = ctx.measureText(invText).width;
+                const invX = (canvas.width - invTextWidth) / 2;
+                ctx.fillText(invText, invX, bottomRowY);
             }
+            
+            // Right side: Controls hint
             ctx.fillStyle = '#666';
-            ctx.fillText('Turn: ' + gameState.turnCount + ' | Lvl: ' + (prog ? prog.level : 1) + ' | Floor: ' + gameState.floor + ' | Press R to restart, ESC to pause', margin, y + 14);
+            const controlsText = 'R:Restart  ESC:Pause';
+            const controlsX = canvas.width - ctx.measureText(controlsText).width - margin;
+            ctx.fillText(controlsText, controlsX, bottomRowY);
+            
+            // === BOTTOM LINE: Additional info ===
+            const infoRowY = bottomRowY + 16;
+            ctx.font = '10px monospace';
+            ctx.fillStyle = '#555';
+            
+            // Performance/debug info (optional)
+            const debugText = 'Entities: ' + Game.ECS.getEntityCount() + '  Visible: ' + 
+                (Game.ECS.getComponent(playerEid, 'vision')?.visible.size || 0);
+            ctx.fillText(debugText, margin, infoRowY);
         },
         
         renderMessages(messages) {
             if (messages.length === 0) return;
-            const uiH = 100;
+            const uiH = 120; // Updated to match new HUD height
             const hudY = canvas.height - uiH;
             const margin = 12;
             ctx.font = '12px monospace';
             ctx.textAlign = 'right';
             const lineH = 14;
-            let y = hudY + uiH - margin;
-            const start = Math.max(0, messages.length - 4);
+            let y = hudY + uiH - margin - 20; // Leave space for the new bottom info line
+            const start = Math.max(0, messages.length - 3); // Show fewer messages to avoid overlap
             for (let i = messages.length - 1; i >= start; i--) {
                 const m = messages[i];
                 const age = Date.now() - m.time;
