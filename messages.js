@@ -1,5 +1,5 @@
 /** =========================
- *  Message System
+ *  Message System - Using Game Namespace
  *  ========================= */
 
 /**
@@ -16,8 +16,8 @@ function addMessage(text) {
  * Update messages, removing old ones that have expired
  */
 function updateMessages() {
-    var now = Date.now();
-    window.messages = window.messages.filter(function(m) { 
+    const now = Date.now();
+    Game.world.messages = Game.world.messages.filter(function(m) { 
         return now - m.time < 5000; 
     });
 }
