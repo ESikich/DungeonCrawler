@@ -168,6 +168,8 @@ Game.Controller = (function() {
             Game.state.gameOver = false;
             Game.state.floor = 0;
             Game.state.justDescended = false;
+            
+            // Ensure explosions array is initialized
             Game.effects.explosions = [];
 
             if (!Game.stats.startTime) {
