@@ -1,5 +1,5 @@
 /** =========================
- *  Renderer Module
+ *  Renderer Module - With Improved LOS Edge Lighting
  *  ========================= */
 
 Game.Renderer = (function() {
