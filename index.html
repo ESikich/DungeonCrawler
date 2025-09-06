@@ -43,13 +43,15 @@
     </div>
 </div>
 
-<!-- Load scripts in correct order: Game namespace must come first -->
+<!-- Load scripts in correct order: Core modules first, then game logic -->
 <script src="globals.js"></script>
 <script src="utils.js"></script>
 <script src="ecs.js"></script>
-<script src="generation.js"></script>
 <script src="messages.js"></script>
+<script src="generation.js"></script>
 <script src="items.js"></script>
+<script src="systems.js"></script>
+<script src="renderer.js"></script>
 <script src="main.js"></script>
 
 <!-- Mobile key synthesis: one tap => one keydown + one keyup (debounced) -->
