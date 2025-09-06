@@ -46,7 +46,7 @@ Game.Renderer = (function() {
                     if (playerEid) {
                         this.renderDungeon(world, playerEid);
                         this.renderEntities(playerEid);
-                        this.renderExplosions(gameState.effects);
+                        this.renderExplosions(Game.effects.explosions);
                         this.renderLighting(playerEid);
                         this.renderHUD(gameState, playerEid);
                         this.renderMessages(world.messages);
