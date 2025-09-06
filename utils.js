@@ -1,5 +1,5 @@
 /** =========================
- *  Utility Functions
+ *  Utility Functions - Using Game Namespace
  *  ========================= */
 
 /**
@@ -13,14 +13,15 @@ function randInt(min, max) {
  * Check if coordinates are within the dungeon bounds
  */
 function inBounds(x, y) {
-    return x >= 0 && x < window.DUNGEON_WIDTH && y >= 0 && y < window.DUNGEON_HEIGHT;
+    return x >= 0 && x < Game.config.DUNGEON_WIDTH && 
+           y >= 0 && y < Game.config.DUNGEON_HEIGHT;
 }
 
 /**
  * Parse a color name into RGB array
  */
 function parseColor(name) {
-    var colors = {
+    const colors = {
         white: [255, 255, 255],
         black: [0, 0, 0],
         red: [255, 100, 100],
