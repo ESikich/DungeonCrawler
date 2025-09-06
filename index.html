@@ -2,44 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ECS Dungeon Crawler</title>
     <link rel="stylesheet" href="styles.css">
-    <style>
-      /* Make taps crisp and avoid double-fires */
-      .mobile-controls button {
-        touch-action: manipulation;
-        -webkit-tap-highlight-color: transparent;
-      }
-    </style>
 </head>
 <body>
 <div class="game-container">
-    <!-- tabindex makes the canvas focusable for key events -->
     <canvas id="gameCanvas" width="800" height="700" tabindex="0"></canvas>
     <div class="controls">
         WASD/Arrows: Move | SPACE: Wait | I: Inventory | D: Drop | ENTER: Use | R: Restart | ESC: Pause
-    </div>
-</div>
-
-<!-- Mobile Controls -->
-<div class="mobile-controls" id="mobileControls" aria-label="Mobile controls">
-    <div class="control-section">
-        <div class="d-pad" role="group" aria-label="Movement">
-            <button class="up" data-key="w" aria-label="Move up">↑</button>
-            <button class="left" data-key="a" aria-label="Move left">←</button>
-            <button class="center" data-key=" " aria-label="Wait / Space">⏸</button>
-            <button class="right" data-key="d" aria-label="Move right">→</button>
-            <button class="down" data-key="s" aria-label="Move down">↓</button>
-        </div>
-    </div>
-    
-    <div class="control-section">
-        <div class="action-buttons" role="group" aria-label="Actions">
-            <button class="action-btn primary" data-key="i" aria-label="Inventory">INV</button>
-            <button class="action-btn" data-key="Enter" aria-label="Use / Enter">USE</button>
-            <button class="action-btn" data-key="r" aria-label="Restart">RESTART</button>
-        </div>
     </div>
 </div>
 
@@ -51,84 +22,8 @@
 <script src="generation.js"></script>
 <script src="items.js"></script>
 <script src="systems.js"></script>
-<script src="renderer.js"></script>
+<script src="hud.js"></script>          <!-- NEW: Add HUD module BEFORE renderer -->
+<script src="renderer.js"></script>     <!-- Updated renderer that uses HUD module -->
 <script src="main.js"></script>
-
-<!-- Mobile key synthesis: one tap => one keydown + one keyup (debounced) -->
-<script>
-(function () {
-  const canvas = document.getElementById('gameCanvas');
-  const controlsRoot = document.getElementById('mobileControls');
-
-  // Normalize keys used by your game
-  function toKeySpec(k) {
-    if (k === 'Enter') return { key: 'Enter', code: 'Enter', keyCode: 13 };
-    if (k === ' ')     return { key: ' ',     code: 'Space', keyCode: 32 };
-    const ch = (k + '').toUpperCase();
-    if (/^[A-Z]$/.test(ch)) return { key: ch.toLowerCase(), code: 'Key' + ch, keyCode: ch.charCodeAt(0) };
-    return { key: k, code: k, keyCode: 0 };
-  }
-
-  function dispatchKey(target, type, spec) {
-    const evOpts = {
-      key: spec.key,
-      code: spec.code,
-      keyCode: spec.keyCode,
-      which: spec.keyCode,
-      bubbles: true,
-      cancelable: true
-    };
-    try { target.dispatchEvent(new KeyboardEvent(type, evOpts)); } catch {}
-  }
-
-  // Global tap lock to guarantee 1 press per tap
-  let inFlight = false;
-
-  function tapKey(k) {
-    if (inFlight) return;
-    inFlight = true;
-
-    const spec = toKeySpec(k);
-    // Focus canvas so desktop browsers also behave
-    canvas?.focus?.();
-
-    // Dispatch to document (primary) and window (secondary) – once each
-    dispatchKey(document, 'keydown', spec);
-    dispatchKey(window,   'keydown', spec);
-
-    // Release shortly after (no 'keypress' — many engines treat it as another action)
-    setTimeout(() => {
-      dispatchKey(document, 'keyup', spec);
-      dispatchKey(window,   'keyup', spec);
-      inFlight = false;
-    }, 60); // ~1 frame on 60Hz; tweak if desired (40–80ms)
-  }
-
-  // Wire mobile buttons — ONLY pointerdown to avoid duplicate click/touchstart firing
-  controlsRoot.querySelectorAll('button[data-key]').forEach(btn => {
-    const k = btn.getAttribute('data-key');
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      tapKey(k);
-    }, { passive: false });
-  });
-
-  // First tap on canvas => Space (to pass "Press SPACE to start")
-  canvas.addEventListener('pointerdown', (e) => {
-    if (!canvas.__started) {
-      canvas.__started = true;
-      e.preventDefault();
-      e.stopPropagation();
-      tapKey(' ');
-    }
-  }, { passive: false, once: true });
-
-  // Ensure canvas has focus after load for desktop users
-  window.addEventListener('load', () => {
-    setTimeout(() => canvas?.focus?.(), 0);
-  });
-})();
-</script>
 </body>
 </html>
