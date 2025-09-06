@@ -6,9 +6,9 @@
  * Add a message to the game message log
  */
 function addMessage(text) {
-    window.messages.push({text: text, time: Date.now()});
-    if (window.messages.length > 10) {
-        window.messages = window.messages.slice(-10);
+    Game.world.messages.push({text: text, time: Date.now()});
+    if (Game.world.messages.length > 10) {
+        Game.world.messages = Game.world.messages.slice(-10);
     }
 }
 
