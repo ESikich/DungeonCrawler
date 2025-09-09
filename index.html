@@ -3,30 +3,772 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ECS Dungeon Crawler</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>ECS Dungeon Crawler - CRT Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-glow: #00ff41;
+            --secondary-glow: #ff6b35;
+            --danger-glow: #ff073a;
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a2e;
+            --text-primary: #00ff41;
+            --text-secondary: #a0a0a0;
+            --border-primary: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            background-attachment: fixed;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--text-primary);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated starfield background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(2px 2px at 20px 30px, #fff, transparent),
+                radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+                radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+                radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+                radial-gradient(2px 2px at 160px 30px, rgba(255,255,255,0.9), transparent);
+            background-repeat: repeat;
+            background-size: 200px 100px;
+            animation: starfield 20s linear infinite;
+            opacity: 0.3;
+            z-index: -1;
+        }
+
+        @keyframes starfield {
+            from { transform: translateY(0); }
+            to { transform: translateY(-100px); }
+        }
+
+        .game-header {
+            text-align: center;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+
+        .game-title {
+            font-family: 'Orbitron', monospace;
+            font-size: 2.5rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--primary-glow);
+            text-shadow: 
+                0 0 5px var(--primary-glow),
+                0 0 10px var(--primary-glow),
+                0 0 15px var(--primary-glow),
+                0 0 20px var(--primary-glow);
+            animation: titlePulse 2s ease-in-out infinite alternate;
+            margin: 0;
+        }
+
+        @keyframes titlePulse {
+            from { 
+                text-shadow: 
+                    0 0 5px var(--primary-glow),
+                    0 0 10px var(--primary-glow),
+                    0 0 15px var(--primary-glow),
+                    0 0 20px var(--primary-glow);
+            }
+            to { 
+                text-shadow: 
+                    0 0 10px var(--primary-glow),
+                    0 0 20px var(--primary-glow),
+                    0 0 30px var(--primary-glow),
+                    0 0 40px var(--primary-glow);
+            }
+        }
+
+        .game-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .crt-container {
+            position: relative;
+            background: #1a1a1a;
+            border-radius: 15px;
+            padding: 40px 30px 60px 30px;
+            box-shadow: 
+                0 0 50px rgba(0, 255, 65, 0.3),
+                inset 0 0 30px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+        }
+
+        /* CRT Monitor Bezel */
+        .crt-container::before {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            bottom: 40px;
+            border: 3px solid #333;
+            border-radius: 8px;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.8),
+                0 0 10px rgba(0, 255, 65, 0.2);
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* Power LED */
+        .crt-container::after {
+            content: '';
+            position: absolute;
+            bottom: 15px;
+            right: 25px;
+            width: 8px;
+            height: 8px;
+            background: var(--primary-glow);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--primary-glow);
+            animation: powerLED 2s ease-in-out infinite alternate;
+            z-index: 3;
+        }
+
+        @keyframes powerLED {
+            from { opacity: 0.6; }
+            to { opacity: 1; }
+        }
+
+        .game-container {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 1;
+            /* Apply blur to entire game container */
+            filter: blur(1px) brightness(1.2) contrast(1.0) saturate(1.3);
+        }
+
+        /* CSS CRT Effects */
+        .crt-screen {
+            position: relative;
+            overflow: hidden;
+            border-radius: 4px;
+        }
+
+        /* Scanlines overlay */
+        .crt-screen::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 65, 0.1) 2px,
+                rgba(0, 255, 65, 0.1) 4px
+            );
+            pointer-events: none;
+            z-index: 10;
+            animation: scanlines 0.1s linear infinite;
+        }
+
+        @keyframes scanlines {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
+
+        /* Curvature and screen effects */
+        .crt-screen::after {
+            content: '';
+            position: absolute;
+            top: -5%;
+            left: -5%;
+            right: -5%;
+            bottom: -5%;
+            background: radial-gradient(
+                ellipse at center,
+                transparent 60%,
+                rgba(0, 0, 0, 0.3) 100%
+            );
+            pointer-events: none;
+            z-index: 11;
+        }
+
+        canvas {
+            display: block;
+            background: #000;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            filter: 
+                contrast(1.2)
+                brightness(1.1)
+                saturate(1.3);
+            animation: crtFlicker 0.15s ease-in-out infinite alternate;
+        }
+
+        @keyframes crtFlicker {
+            from { 
+                filter: 
+                    contrast(1.2)
+                    brightness(1.1)
+                    saturate(1.3);
+            }
+            to { 
+                filter: 
+                    contrast(1.25)
+                    brightness(1.05)
+                    saturate(1.35);
+            }
+        }
+
+        /* WebGL CRT Shader Container */
+        .webgl-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #crtShaderCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .game-footer {
+            margin-top: 1rem;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            max-width: 300px;
+            margin: 0 auto 1rem auto;
+        }
+
+        .control-key {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border-primary);
+            border-radius: 4px;
+            padding: 0.3rem 0.5rem;
+            font-family: inherit;
+            font-size: 0.7rem;
+            text-align: center;
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+        }
+
+        .control-key:hover {
+            background: rgba(0, 255, 65, 0.2);
+            border-color: var(--primary-glow);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .crt-controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .crt-toggle {
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid var(--primary-glow);
+            border-radius: 4px;
+            padding: 0.3rem 0.8rem;
+            color: var(--primary-glow);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.7rem;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .crt-toggle:hover,
+        .crt-toggle.active {
+            background: rgba(0, 255, 65, 0.3);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+
+        .crt-controls input[type="range"] {
+            background: transparent;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 3px;
+            background: var(--border-primary);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .crt-controls input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--primary-glow);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px var(--primary-glow);
+        }
+
+        .crt-controls input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: var(--primary-glow);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 5px var(--primary-glow);
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .game-title {
+                font-size: 1.8rem;
+            }
+            
+            .crt-container {
+                margin: 0 10px;
+                padding: 20px 15px 40px 15px;
+            }
+            
+            canvas {
+                max-width: 100%;
+                height: auto;
+            }
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            .crt-screen::before,
+            canvas {
+                animation: none !important;
+            }
+            
+            body::before {
+                display: none;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="game-container">
-    <canvas id="gameCanvas" width="800" height="700" tabindex="0"></canvas>
-</div>
+    <div class="game-header">
+        <h1 class="game-title">Dungeon Durgon</h1>
+        <p class="game-subtitle">CRT Terminal Edition</p>
+    </div>
 
-<!-- Load scripts in correct order: Core modules first, then game logic -->
-<script src="globals.js"></script>
-<script src="utils.js"></script>
-<script src="ecs.js"></script>
-<script src="messages.js"></script>
-<script src="generation.js"></script>
-<script src="items.js"></script>
-<script src="monsters.js"></script>
-<script src="systems.js"></script>
-<script src="hud.js"></script>
-<script src="renderer.js"></script>
-<script src="visual-effects.js"></script>
-<script src="enhanced-systems.js"></script>
-<script src="enhanced-renderer.js"></script>
-<script src="enhanced-items.js"></script>
-<script src="visual-integration.js"></script>
-<script src="main.js"></script>
+    <div class="crt-container">
+        <div class="game-container">
+            <div class="crt-screen" id="crtScreen">
+                <div class="webgl-container">
+                    <canvas id="gameCanvas" width="800" height="700" tabindex="0"></canvas>
+                    <canvas id="crtShaderCanvas" width="800" height="700"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-footer">
+        <div class="controls-grid">
+            <div class="control-key">W/A/S/D</div>
+            <div class="control-key">I - Inventory</div>
+            <div class="control-key">R - Restart</div>
+            <div class="control-key">SPACE - Wait</div>
+            <div class="control-key">ESC - Pause</div>
+            <div class="control-key">Arrow Keys</div>
+        </div>
+        
+        <div class="crt-controls">
+            <button class="crt-toggle active" id="scanlinesToggle">Scanlines</button>
+            <button class="crt-toggle active" id="curvatureToggle">Curvature</button>
+            <button class="crt-toggle active" id="glowToggle">Glow</button>
+            <button class="crt-toggle" id="noiseToggle">Noise</button>
+        </div>
+    </div>
+
+    <!-- Load scripts in correct order -->
+    <script src="globals.js"></script>
+    <script src="utils.js"></script>
+    <script src="ecs.js"></script>
+    <script src="messages.js"></script>
+    <script src="generation.js"></script>
+    <script src="items.js"></script>
+    <script src="monsters.js"></script>
+    <script src="systems.js"></script>
+    <script src="hud.js"></script>
+    <script src="renderer.js"></script>
+    <script src="visual-effects.js"></script>
+    <script src="enhanced-systems.js"></script>
+    <script src="enhanced-renderer.js"></script>
+    <script src="enhanced-items.js"></script>
+    <script src="visual-integration.js"></script>
+    <script src="main.js"></script>
+
+    <script>
+        // CRT Shader Implementation
+        class CRTShader {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                
+                if (!this.gl) {
+                    console.warn('WebGL not supported, falling back to CSS effects');
+                    return;
+                }
+
+                this.initShaders();
+                this.initBuffers();
+                this.setupTexture();
+                
+                this.settings = {
+                    scanlines: true,
+                    curvature: true,
+                    glow: true,
+                    noise: false,
+                    brightness: 1.3,
+                    contrast: 1.0,
+                    saturation: 1.3
+                };
+            }
+
+            initShaders() {
+                const vertexShaderSource = `
+                    attribute vec4 aVertexPosition;
+                    attribute vec2 aTextureCoord;
+                    varying vec2 vTextureCoord;
+                    
+                    void main() {
+                        gl_Position = aVertexPosition;
+                        vTextureCoord = aTextureCoord;
+                    }
+                `;
+
+                const fragmentShaderSource = `
+                    precision mediump float;
+                    varying vec2 vTextureCoord;
+                    uniform sampler2D uSampler;
+                    uniform float uTime;
+                    uniform bool uScanlines;
+                    uniform bool uCurvature;
+                    uniform bool uGlow;
+                    uniform bool uNoise;
+                    uniform float uBrightness;
+                    uniform float uContrast;
+                    uniform float uSaturation;
+                    
+                    vec2 curve(vec2 uv) {
+                        if (!uCurvature) return uv;
+                        
+                        uv = uv * 2.0 - 1.0;
+                        vec2 offset = abs(uv.yx) / vec2(6.0, 4.0);
+                        uv = uv + uv * offset * offset;
+                        uv = uv * 0.5 + 0.5;
+                        return uv;
+                    }
+                    
+                    float random(vec2 st) {
+                        return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+                    }
+                    
+                    void main() {
+                        vec2 uv = curve(vTextureCoord);
+                        
+                        // Sample the texture
+                        vec4 color = texture2D(uSampler, uv);
+                        
+                        // Apply brightness and contrast
+                        color.rgb = ((color.rgb - 0.5) * uContrast + 0.5) * uBrightness;
+                        
+                        // Apply saturation
+                        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                        color.rgb = mix(vec3(gray), color.rgb, uSaturation);
+                        
+                        // Scanlines
+                        if (uScanlines) {
+                            float scanline = sin(uv.y * 800.0) * 0.04;
+                            color.rgb -= scanline;
+                        }
+                        
+                        // Glow effect
+                        if (uGlow) {
+                            vec2 glowUV = uv;
+                            vec4 glow = texture2D(uSampler, glowUV);
+                            color.rgb += glow.rgb * 0.1;
+                        }
+                        
+                        // Noise
+                        if (uNoise) {
+                            float noise = random(uv + uTime) * 0.05;
+                            color.rgb += noise;
+                        }
+                        
+                        // Vignette
+                        vec2 vignetteUV = vTextureCoord;
+                        vignetteUV *= 1.0 - vignetteUV.yx;
+                        float vignette = vignetteUV.x * vignetteUV.y * 15.0;
+                        vignette = pow(vignette, 0.25);
+                        color.rgb *= vignette;
+                        
+                        // Edge fade
+                        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+                            color = vec4(0.0);
+                        }
+                        
+                        gl_FragColor = color;
+                    }
+                `;
+
+                this.shaderProgram = this.createShaderProgram(vertexShaderSource, fragmentShaderSource);
+                this.programInfo = {
+                    attribLocations: {
+                        vertexPosition: this.gl.getAttribLocation(this.shaderProgram, 'aVertexPosition'),
+                        textureCoord: this.gl.getAttribLocation(this.shaderProgram, 'aTextureCoord'),
+                    },
+                    uniformLocations: {
+                        uSampler: this.gl.getUniformLocation(this.shaderProgram, 'uSampler'),
+                        uTime: this.gl.getUniformLocation(this.shaderProgram, 'uTime'),
+                        uScanlines: this.gl.getUniformLocation(this.shaderProgram, 'uScanlines'),
+                        uCurvature: this.gl.getUniformLocation(this.shaderProgram, 'uCurvature'),
+                        uGlow: this.gl.getUniformLocation(this.shaderProgram, 'uGlow'),
+                        uNoise: this.gl.getUniformLocation(this.shaderProgram, 'uNoise'),
+                        uBrightness: this.gl.getUniformLocation(this.shaderProgram, 'uBrightness'),
+                        uContrast: this.gl.getUniformLocation(this.shaderProgram, 'uContrast'),
+                        uSaturation: this.gl.getUniformLocation(this.shaderProgram, 'uSaturation'),
+                    },
+                };
+            }
+
+            createShaderProgram(vertexSource, fragmentSource) {
+                const vertexShader = this.createShader(this.gl.VERTEX_SHADER, vertexSource);
+                const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, fragmentSource);
+
+                const shaderProgram = this.gl.createProgram();
+                this.gl.attachShader(shaderProgram, vertexShader);
+                this.gl.attachShader(shaderProgram, fragmentShader);
+                this.gl.linkProgram(shaderProgram);
+
+                if (!this.gl.getProgramParameter(shaderProgram, this.gl.LINK_STATUS)) {
+                    console.error('Unable to initialize shader program:', this.gl.getProgramInfoLog(shaderProgram));
+                    return null;
+                }
+
+                return shaderProgram;
+            }
+
+            createShader(type, source) {
+                const shader = this.gl.createShader(type);
+                this.gl.shaderSource(shader, source);
+                this.gl.compileShader(shader);
+
+                if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+                    console.error('Error compiling shader:', this.gl.getShaderInfoLog(shader));
+                    this.gl.deleteShader(shader);
+                    return null;
+                }
+
+                return shader;
+            }
+
+            initBuffers() {
+                // Vertex positions
+                const positions = [
+                    -1.0,  1.0,
+                     1.0,  1.0,
+                    -1.0, -1.0,
+                     1.0, -1.0,
+                ];
+
+                this.positionBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(positions), this.gl.STATIC_DRAW);
+
+                // Texture coordinates
+                const textureCoords = [
+                    0.0, 0.0,
+                    1.0, 0.0,
+                    0.0, 1.0,
+                    1.0, 1.0,
+                ];
+
+                this.textureCoordBuffer = this.gl.createBuffer();
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.textureCoordBuffer);
+                this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(textureCoords), this.gl.STATIC_DRAW);
+            }
+
+            setupTexture() {
+                this.texture = this.gl.createTexture();
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+                this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+            }
+
+            render(sourceCanvas) {
+                if (!this.gl || !this.shaderProgram) return;
+
+                // Update texture with source canvas
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, sourceCanvas);
+
+                // Set viewport
+                this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+                this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+
+                // Use shader program
+                this.gl.useProgram(this.shaderProgram);
+
+                // Set uniforms
+                this.gl.uniform1f(this.programInfo.uniformLocations.uTime, Date.now() * 0.001);
+                this.gl.uniform1i(this.programInfo.uniformLocations.uScanlines, this.settings.scanlines);
+                this.gl.uniform1i(this.programInfo.uniformLocations.uCurvature, this.settings.curvature);
+                this.gl.uniform1i(this.programInfo.uniformLocations.uGlow, this.settings.glow);
+                this.gl.uniform1i(this.programInfo.uniformLocations.uNoise, this.settings.noise);
+                this.gl.uniform1f(this.programInfo.uniformLocations.uBrightness, this.settings.brightness);
+                this.gl.uniform1f(this.programInfo.uniformLocations.uContrast, this.settings.contrast);
+                this.gl.uniform1f(this.programInfo.uniformLocations.uSaturation, this.settings.saturation);
+
+                // Bind texture
+                this.gl.activeTexture(this.gl.TEXTURE0);
+                this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
+                this.gl.uniform1i(this.programInfo.uniformLocations.uSampler, 0);
+
+                // Set up vertex attributes
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer);
+                this.gl.vertexAttribPointer(this.programInfo.attribLocations.vertexPosition, 2, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.programInfo.attribLocations.vertexPosition);
+
+                this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.textureCoordBuffer);
+                this.gl.vertexAttribPointer(this.programInfo.attribLocations.textureCoord, 2, this.gl.FLOAT, false, 0, 0);
+                this.gl.enableVertexAttribArray(this.programInfo.attribLocations.textureCoord);
+
+                // Draw
+                this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+            }
+
+            updateSettings(settings) {
+                Object.assign(this.settings, settings);
+            }
+        }
+
+        // Initialize CRT effects when the page loads
+        window.addEventListener('load', function() {
+            const gameCanvas = document.getElementById('gameCanvas');
+            const shaderCanvas = document.getElementById('crtShaderCanvas');
+            const crtScreen = document.getElementById('crtScreen');
+            
+            let crtShader = null;
+            let useWebGL = true;
+
+            // Try to initialize WebGL CRT shader
+            try {
+                crtShader = new CRTShader(shaderCanvas);
+                if (!crtShader.gl) {
+                    useWebGL = false;
+                }
+            } catch (e) {
+                console.warn('Failed to initialize WebGL CRT shader:', e);
+                useWebGL = false;
+            }
+
+            // Set up control buttons
+            const scanlinesToggle = document.getElementById('scanlinesToggle');
+            const curvatureToggle = document.getElementById('curvatureToggle');
+            const glowToggle = document.getElementById('glowToggle');
+            const noiseToggle = document.getElementById('noiseToggle');
+
+            function updateCSSEffects() {
+                const scanlinesEnabled = scanlinesToggle.classList.contains('active');
+                const curvatureEnabled = curvatureToggle.classList.contains('active');
+                const glowEnabled = glowToggle.classList.contains('active');
+                const noiseEnabled = noiseToggle.classList.contains('active');
+
+                if (!useWebGL) {
+                    // Fallback to CSS effects
+                    const scanlineLayer = crtScreen.querySelector('::before');
+                    if (scanlinesEnabled) {
+                        crtScreen.style.setProperty('--scanlines-opacity', '0.1');
+                    } else {
+                        crtScreen.style.setProperty('--scanlines-opacity', '0');
+                    }
+                }
+            }
+
+            // Button event listeners
+            [scanlinesToggle, curvatureToggle, glowToggle, noiseToggle].forEach(button => {
+                button.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                    
+                    if (useWebGL && crtShader) {
+                        crtShader.updateSettings({
+                            scanlines: scanlinesToggle.classList.contains('active'),
+                            curvature: curvatureToggle.classList.contains('active'),
+                            glow: glowToggle.classList.contains('active'),
+                            noise: noiseToggle.classList.contains('active')
+                        });
+                    } else {
+                        updateCSSEffects();
+                    }
+                });
+            });
+
+            // Render loop for WebGL shader
+            if (useWebGL && crtShader) {
+                shaderCanvas.style.display = 'block';
+                
+                // Also apply CSS blur to the base canvas for character rendering
+                gameCanvas.style.filter = `
+                    contrast(1.0)
+                    brightness(1.2)
+                    saturate(1.3)
+                    blur(2.0px)
+                `;
+                
+                function renderCRT() {
+                    crtShader.render(gameCanvas);
+                    requestAnimationFrame(renderCRT);
+                }
+                renderCRT();
+            } else {
+                // Hide WebGL canvas and rely on CSS effects
+                shaderCanvas.style.display = 'none';
+                console.log('Using CSS-based CRT effects');
+            }
+
+            updateCSSEffects();
+        });
+    </script>
 </body>
 </html>
