@@ -291,26 +291,82 @@ function monsterDataFor(type) {
 }
 
 /**
- * Create a monster entity from monster data
+ * Apply floor-based scaling to monster stats
+ */
+function scaleMonsterForFloor(monsterData, floor) {
+    const scaledData = JSON.parse(JSON.stringify(monsterData)); // Deep copy
+    
+    if (floor <= 1) {
+        return scaledData; // No scaling on first floor
+    }
+    
+    // Calculate scaling factor: 15% increase per floor, with diminishing returns
+    const floorDepth = Math.abs(floor);
+    const scalingFactor = 1 + (floorDepth - 1) * 0.15 * (1 / (1 + (floorDepth - 1) * 0.05));
+    
+    // Scale health
+    if (scaledData.health) {
+        scaledData.health.hp = Math.floor(scaledData.health.hp * scalingFactor);
+        scaledData.health.maxHp = scaledData.health.hp;
+    }
+    
+    // Scale combat stats
+    if (scaledData.stats) {
+        scaledData.stats.strength = Math.floor(scaledData.stats.strength * scalingFactor);
+        scaledData.stats.accuracy = Math.floor(scaledData.stats.accuracy * scalingFactor);
+        // Agility and evasion scale more slowly to avoid making monsters too hard to hit
+        scaledData.stats.agility = Math.floor(scaledData.stats.agility * Math.sqrt(scalingFactor));
+        scaledData.stats.evasion = Math.floor(scaledData.stats.evasion * Math.sqrt(scalingFactor));
+    }
+    
+    // Scale XP reward
+    if (scaledData.xpValue) {
+        scaledData.xpValue.xp = Math.floor(scaledData.xpValue.xp * scalingFactor);
+    }
+    
+    // Scale gold drops
+    if (scaledData.lootTable && scaledData.lootTable.drops) {
+        for (const drop of scaledData.lootTable.drops) {
+            if (drop.type === 'gold' && drop.amount) {
+                drop.amount = drop.amount.map(amount => Math.floor(amount * scalingFactor));
+            }
+        }
+    }
+    
+    // Update name to reflect scaling on deeper floors
+    if (floorDepth >= 5) {
+        const prefixes = ['Elite', 'Veteran', 'Ancient', 'Cursed', 'Shadow'];
+        const prefix = prefixes[Math.min(Math.floor((floorDepth - 5) / 2), prefixes.length - 1)];
+        scaledData.name = `${prefix} ${scaledData.name}`;
+    }
+    
+    return scaledData;
+}
+
+/**
+ * Create a monster entity from monster data with floor scaling
  */
 function createMonsterFromData(data, x, y, ecs = Game.ECS) {
+    const floor = Game.state.floor;
+    const scaledData = scaleMonsterForFloor(data, floor);
+    
     const eid = ecs.createEntity();
     ecs.addComponent(eid, 'position', {x: x, y: y});
     ecs.addComponent(eid, 'vision', {radius: 6, visible: new Set(), seen: new Set()});
     ecs.addComponent(eid, 'blocker', {passable: false});
     ecs.addComponent(eid, 'ai', {
-        behavior: data.behavior || 'chase',
+        behavior: scaledData.behavior || 'chase',
         lastPlayerPos: null,
         active: false
     });
     ecs.addComponent(eid, 'descriptor', {
-        name: data.name,
-        glyph: data.glyph,
-        color: data.color
+        name: scaledData.name,
+        glyph: scaledData.glyph,
+        color: scaledData.color
     });
 
-    // Add all other components from the monster data
-    for (const [componentType, componentData] of Object.entries(data)) {
+    // Add all other components from the scaled monster data
+    for (const [componentType, componentData] of Object.entries(scaledData)) {
         if (componentType !== 'name' && componentType !== 'glyph' && componentType !== 'color' && componentType !== 'behavior') {
             ecs.addComponent(eid, componentType, JSON.parse(JSON.stringify(componentData)));
         }
@@ -352,7 +408,12 @@ function spawnMonstersModular(px, py, world = Game.world, ecs = Game.ECS, custom
         };
     }
     
-    for (let i = 0; i < Math.min(world.rooms.length, 6); i++) {
+    // Spawn more monsters on deeper floors
+    const baseMonsterCount = Math.min(world.rooms.length, 6);
+    const extraMonsters = Math.floor(floor / 3); // +1 monster every 3 floors
+    const totalMonsters = Math.min(baseMonsterCount + extraMonsters, world.rooms.length);
+
+    for (let i = 0; i < totalMonsters; i++) {
         if (Math.random() < 0.7) {
             const r = world.rooms[i];
             const x = randInt(r.x, r.x + r.width - 1);
