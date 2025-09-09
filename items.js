@@ -185,7 +185,7 @@ const ItemRegistry = {
     
     'speed': {
         kind: 'potion', name: 'Speed Potion', glyph: '!', color: 'cyan', rarity: 'rare',
-        desc: 'Move faster for 15 turns.',
+        desc: 'Move faster - enemies act less frequently for 15 turns.',  // Updated description
         effect: 'tempBoost', boostType: 'speed', bonus: 3, turns: 15
     },
     

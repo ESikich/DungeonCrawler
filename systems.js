@@ -1,5 +1,5 @@
 /** =========================
- *  Game Systems Module
+ *  Game Systems Module - Updated AI for Random Slime Movement
  *  ========================= */
 
 Game.Systems = (function() {
@@ -137,11 +137,12 @@ Game.Systems = (function() {
             }
         },
         
-        // AI System
+        // AI System - UPDATED with random movement for slimes
         AI: {
             process() {
                 const aiList = Game.ECS.getEntitiesWith(['ai', 'position', 'health']);
                 const ppos = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                
                 for (let i = 0; i < aiList.length; i++) {
                     const eid = aiList[i];
                     const hp = Game.ECS.getComponent(eid, 'health');
@@ -149,7 +150,32 @@ Game.Systems = (function() {
 
                     const ai = Game.ECS.getComponent(eid, 'ai');
                     const pos = Game.ECS.getComponent(eid, 'position');
+                    const desc = Game.ECS.getComponent(eid, 'descriptor');
 
+                    // Check if this is a slime
+                    const isSlime = desc && desc.name && desc.name.toLowerCase().includes('slime');
+
+                    // Handle slime behavior (random movement) - slimes are always active
+                    if (isSlime) {
+                        // Move randomly every turn with 70% probability
+                        if (Math.random() < 0.7) { // 70% chance to move each turn
+                            const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                            const randomDir = directions[Math.floor(Math.random() * directions.length)];
+                            const newX = pos.x + randomDir[0];
+                            const newY = pos.y + randomDir[1];
+                            
+                            Game.ECS.postEvent({
+                                type: 'move', 
+                                entityId: eid, 
+                                toX: newX, 
+                                toY: newY
+                            });
+                        }
+                        // Skip the rest of the AI logic for slimes
+                        continue;
+                    }
+
+                    // Handle other monsters (chase behavior) - need to see player first
                     if (!ai.active) {
                         if (Game.Systems.Vision.canSeePlayer(eid)) {
                             ai.active = true;
@@ -359,7 +385,7 @@ Game.Systems = (function() {
             }
         },
         
-        // Turn Processing System
+    // Turn Processing System
         TurnProcessor: {
             process() {
                 Game.state.playerAttackedThisTurn = false;
@@ -382,11 +408,8 @@ Game.Systems = (function() {
                 Game.state.justDescended = false;
                 Game.state.turnCount++;
                 
-                const st = Game.ECS.getComponent(Game.world.playerEid, 'status');
-                if (st && st.speedBoost > 0 && Game.state.turnCount % 2 === 0) {
-                    return true; // Extra action
-                }
-                return false;
+                // Speed boost now works by making enemies move less frequently (handled in AI system)
+                return false; // No extra actions needed
             }
         }
     };

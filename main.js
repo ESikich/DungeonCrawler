@@ -1,5 +1,5 @@
 /** =========================
- *  Main Game Controller - Complete Final Version
+ *  Main Game Controller
  *  ========================= */
 
 // Main Game Controller with Dependency Injection
@@ -99,10 +99,8 @@ Game.Controller = (function() {
                 toY: pp.y + dy
             });
             
-            const extraAction = systems.TurnProcessor.process();
-            if (extraAction) {
-                messageSystem.add('Speed boost: extra action!');
-            }
+            // Process the turn (enemies may move less frequently if player has speed boost)
+            systems.TurnProcessor.process();
         },
         
         handleWait() {
@@ -364,77 +362,14 @@ function createPlayer(x, y, ecs = Game.ECS) {
     return eid;
 }
 
+// UPDATED: Now uses the modular monster system
 function createMonster(type, x, y, ecs = Game.ECS) {
-    const eid = ecs.createEntity();
-    ecs.addComponent(eid, 'position', {x: x, y: y});
-    ecs.addComponent(eid, 'vision', {radius: 6, visible: new Set(), seen: new Set()});
-    ecs.addComponent(eid, 'blocker', {passable: false});
-    ecs.addComponent(eid, 'ai', {behavior: 'chase', lastPlayerPos: null, active: false});
-
-    const monsterTypes = {
-        'slime': {
-            health: {hp: 15, maxHp: 15},
-            stats: {strength: 8, agility: 6, accuracy: 5, evasion: 2},
-            descriptor: {name: 'Green Slime', glyph: 's', color: 'green'},
-            xpValue: {xp: 5},
-            lootTable: {
-                drops: [
-                    {type: 'gold', amount: [2, 8], chance: 0.6},
-                    {type: 'potion', chance: 0.3},
-                    {type: 'scroll', chance: 0.1}
-                ]
-            }
-        },
-        'orc': {
-            health: {hp: 25, maxHp: 25},
-            stats: {strength: 12, agility: 8, accuracy: 8, evasion: 4},
-            descriptor: {name: 'Orc Warrior', glyph: 'o', color: 'red'},
-            xpValue: {xp: 12},
-            lootTable: {
-                drops: [
-                    {type: 'gold', amount: [5, 15], chance: 0.7},
-                    {type: 'potion', chance: 0.4},
-                    {type: 'strength', chance: 0.2},
-                    {type: 'bomb', chance: 0.3}
-                ]
-            }
-        },
-        'goblin': {
-            health: {hp: 12, maxHp: 12},
-            stats: {strength: 6, agility: 12, accuracy: 7, evasion: 6},
-            descriptor: {name: 'Goblin', glyph: 'g', color: 'brown'},
-            xpValue: {xp: 8},
-            lootTable: {
-                drops: [
-                    {type: 'gold', amount: [3, 10], chance: 0.65},
-                    {type: 'speed', chance: 0.25},
-                    {type: 'scroll', chance: 0.2},
-                    {type: 'vision', chance: 0.15}
-                ]
-            }
-        }
-    };
-
-    const monsterData = monsterTypes[type] || monsterTypes['goblin'];
-    
-    for (const [componentType, data] of Object.entries(monsterData)) {
-        ecs.addComponent(eid, componentType, data);
-    }
-    
-    return eid;
+    return createMonsterFromData(monsterDataFor(type), x, y, ecs);
 }
 
+// UPDATED: Now uses the new monster system
 function spawnMonstersAvoiding(px, py, world = Game.world, ecs = Game.ECS) {
-    const types = ['slime', 'orc', 'goblin'];
-    for (let i = 0; i < Math.min(world.rooms.length, 6); i++) {
-        if (Math.random() < 0.7) {
-            const r = world.rooms[i];
-            const x = randInt(r.x, r.x + r.width - 1);
-            const y = randInt(r.y, r.y + r.height - 1);
-            if (x === px && y === py) continue;
-            createMonster(types[randInt(0, types.length - 1)], x, y, ecs);
-        }
-    }
+    spawnMonstersModular(px, py, world, ecs);
 }
 
 // Clean game initialization
