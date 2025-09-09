@@ -264,7 +264,8 @@ Game.Renderer = (function() {
         renderVisionGradient(pos, vision) {
             const centerX = (pos.x + 0.5) * Game.config.TILE_SIZE;
             const centerY = (pos.y + 0.5) * Game.config.TILE_SIZE;
-            const radius = vision.radius * Game.config.TILE_SIZE;
+            // Extend radius to cover the corners of the farthest tiles
+            const radius = (vision.radius + 0.7) * Game.config.TILE_SIZE;
             
             // Create the main gradient
             const gradient = lightCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
@@ -367,7 +368,70 @@ Game.Renderer = (function() {
             const panelX = (canvas.width - panelWidth) / 2;
             const panelY = (canvas.height - panelHeight) / 2;
             
-            this.renderInventoryPanel(panelX, panelY, panelWidth, panelHeight, inventory, gameState.invSelIndex);
+            // Panel background
+            ctx.fillStyle = 'rgba(20,20,40,0.95)';
+            ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+            ctx.strokeStyle = '#88f';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+            
+            // Title
+            ctx.fillStyle = '#fff';
+            ctx.font = '20px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            const itemCount = inventory ? inventory.items.length : 0;
+            const capacity = inventory ? inventory.capacity : 0;
+            ctx.fillText(`Inventory (${itemCount}/${capacity})`, panelX + 16, panelY + 12);
+            
+            // Render items
+            if (!inventory || inventory.items.length === 0) {
+                ctx.fillStyle = '#bbb';
+                ctx.font = '18px monospace';
+                ctx.fillText('(empty)', panelX + 16, panelY + 60);
+            } else {
+                ctx.font = '15px monospace';
+                ctx.textBaseline = 'alphabetic';
+                
+                const rowHeight = 20;
+                const selectedIndex = clamp(gameState.invSelIndex, 0, inventory.items.length - 1);
+                const itemsToShow = Math.min(inventory.items.length, 12);
+                
+                for (let i = 0; i < itemsToShow; i++) {
+                    const itemY = panelY + 60 + i * rowHeight;
+                    
+                    // Selection highlight
+                    if (i === selectedIndex) {
+                        ctx.fillStyle = 'rgba(60,60,120,0.85)';
+                        ctx.fillRect(panelX + 10, itemY - 12, panelWidth - 20, rowHeight);
+                    }
+                    
+                    // Item text
+                    const item = inventory.items[i];
+                    const rarityColor = getItemRarityColor(item.rarity);
+                    ctx.fillStyle = rarityColor;
+                    ctx.fillText(`${(i + 1)}. ${item.name || 'Item'}`, panelX + 16, itemY);
+                }
+                
+                // Description at the very bottom - just above instructions
+                const selectedItem = inventory.items[selectedIndex];
+                if (selectedItem) {
+                    ctx.font = '12px monospace';
+                    ctx.fillStyle = '#9cf';
+                    ctx.textBaseline = 'top';
+                    
+                    const desc = selectedItem.desc || 'No description.';
+                    const maxChars = Math.floor((panelWidth - 32) / 7);
+                    const displayDesc = desc.length > maxChars ? desc.substring(0, maxChars - 3) + '...' : desc;
+                    ctx.fillText(displayDesc, panelX + 16, panelY + panelHeight - 30);
+                }
+            }
+            
+            // Instructions at very bottom
+            ctx.font = '11px monospace';
+            ctx.fillStyle = '#ccc';
+            ctx.textBaseline = 'top';
+            ctx.fillText('↑/↓: select | ENTER: use | D: drop | I/ESC: close', panelX + 16, panelY + panelHeight - 15);
         },
         
         renderInventoryPanel(x, y, width, height, inventory, selectedIndex) {
@@ -387,13 +451,15 @@ Game.Renderer = (function() {
             const capacity = inventory ? inventory.capacity : 0;
             ctx.fillText(`Inventory (${itemCount}/${capacity})`, x + 16, y + 16);
             
-            // Instructions
-            ctx.font = '14px monospace';
+            // Instructions - Split into multiple lines and ensure they fit
+            ctx.font = '12px monospace';
             ctx.fillStyle = '#ccc';
-            ctx.fillText('↑/↓ or W/S: select   ENTER/SPACE: use   D: drop   I/ESC: close', x + 16, y + height - 28);
+            const instructY = y + height - 40;
+            ctx.fillText('↑/↓ or W/S: select   ENTER/SPACE: use   D: drop', x + 16, instructY);
+            ctx.fillText('I/ESC: close inventory', x + 16, instructY + 16);
             
-            // Item list
-            this.renderInventoryItems(x + 16, y + 60, width - 32, height - 120, inventory, selectedIndex);
+            // Item list - Reserve more space for instructions
+            this.renderInventoryItems(x + 16, y + 60, width - 32, height - 140, inventory, selectedIndex);
         },
         
         renderInventoryItems(x, y, width, height, inventory, selectedIndex) {
@@ -404,19 +470,27 @@ Game.Renderer = (function() {
                 return;
             }
             
-            ctx.font = '16px monospace';
+            ctx.font = '15px monospace';
             ctx.textBaseline = 'alphabetic';
             
-            const rowHeight = 24;
+            const rowHeight = 20; // Reduced from 24 to fit more items
             selectedIndex = clamp(selectedIndex, 0, inventory.items.length - 1);
             
-            for (let i = 0; i < inventory.items.length; i++) {
-                const itemY = y + i * rowHeight;
+            // Reserve space for description (2 lines max)
+            const descriptionSpace = 40;
+            const availableHeight = height - descriptionSpace;
+            const maxVisibleItems = Math.floor(availableHeight / rowHeight);
+            
+            // Always show all items up to capacity (12)
+            const itemsToShow = Math.min(inventory.items.length, 12);
+            
+            for (let i = 0; i < itemsToShow; i++) {
+                const itemY = y + i * rowHeight + 15; // +15 for baseline
                 
                 // Selection highlight
                 if (i === selectedIndex) {
                     ctx.fillStyle = 'rgba(60,60,120,0.85)';
-                    ctx.fillRect(x - 6, itemY - 16, width, rowHeight);
+                    ctx.fillRect(x - 6, itemY - 12, width, rowHeight);
                 }
                 
                 // Item text
@@ -426,13 +500,20 @@ Game.Renderer = (function() {
                 ctx.fillText(`${(i + 1)}. ${item.name || 'Item'}`, x, itemY);
             }
             
-            // Item description
+            // Item description at bottom - keep it compact
             if (inventory.items[selectedIndex]) {
                 const selectedItem = inventory.items[selectedIndex];
-                ctx.font = '16px monospace';
+                const detailsY = y + availableHeight + 10;
+                
+                ctx.font = '12px monospace';
                 ctx.fillStyle = '#9cf';
                 ctx.textBaseline = 'top';
-                ctx.fillText(`Details: ${selectedItem.desc || 'No description.'}`, x, y + height - 20);
+                
+                // Single line description, truncate if too long
+                const desc = selectedItem.desc || 'No description.';
+                const maxChars = Math.floor(width / 7); // Approximate chars that fit
+                const displayDesc = desc.length > maxChars ? desc.substring(0, maxChars - 3) + '...' : desc;
+                ctx.fillText(displayDesc, x, detailsY);
             }
         },
         
