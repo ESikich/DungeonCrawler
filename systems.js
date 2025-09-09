@@ -384,32 +384,84 @@ Game.Systems = (function() {
                 });
             }
         },
-        
-    // Turn Processing System
+
+        // Turn Processing System
         TurnProcessor: {
             process() {
                 Game.state.playerAttackedThisTurn = false;
 
+                // Process player movement
                 Game.Systems.Movement.process();
-                Game.Systems.AI.process();
-                Game.Systems.Movement.process();
-
-                const seers = Game.ECS.getEntitiesWith(['vision', 'position']);
-                for (let i = 0; i < seers.length; i++) {
-                    Game.Systems.Vision.update(seers[i]);
-                }
-
-                if (!Game.state.playerAttackedThisTurn && !Game.state.justDescended) {
-                    Game.Systems.Combat.processEnemyAttacks();
-                }
-
-                Game.Systems.StatusEffects.update();
-
-                Game.state.justDescended = false;
-                Game.state.turnCount++;
                 
-                // Speed boost now works by making enemies move less frequently (handled in AI system)
-                return false; // No extra actions needed
+                // Check if player has speed boost and track action count
+                const st = Game.ECS.getComponent(Game.world.playerEid, 'status');
+                const hasSpeedBoost = st && st.speedBoost > 0;
+                
+                // Initialize speed action counter if it doesn't exist
+                if (!Game.state.speedActionCount) {
+                    Game.state.speedActionCount = 0;
+                }
+                
+                if (hasSpeedBoost) {
+                    Game.state.speedActionCount++;
+                    
+                    // Update vision after player action
+                    const seers = Game.ECS.getEntitiesWith(['vision', 'position']);
+                    for (let i = 0; i < seers.length; i++) {
+                        Game.Systems.Vision.update(seers[i]);
+                    }
+                    
+                    // After player's second action, process enemies normally
+                    if (Game.state.speedActionCount >= 2) {
+                        Game.state.speedActionCount = 0; // Reset counter
+                        
+                        // Now process AI and enemies
+                        Game.Systems.AI.process();
+                        Game.Systems.Movement.process();
+                        
+                        // Update vision again after AI movement
+                        for (let i = 0; i < seers.length; i++) {
+                            Game.Systems.Vision.update(seers[i]);
+                        }
+                        
+                        // Enemy attacks
+                        if (!Game.state.playerAttackedThisTurn && !Game.state.justDescended) {
+                            Game.Systems.Combat.processEnemyAttacks();
+                        }
+                        
+                        Game.Systems.StatusEffects.update();
+                        Game.state.justDescended = false;
+                        Game.state.turnCount++;
+                        
+                        return false; // End of full speed turn
+                    } else {
+                        // Player gets another action, don't process enemies yet
+                        return true;
+                    }
+                } else {
+                    // No speed boost - normal turn processing
+                    Game.state.speedActionCount = 0; // Reset counter when not speedy
+                    
+                    Game.Systems.AI.process();
+                    Game.Systems.Movement.process();
+
+                    // Update vision for all entities
+                    const seers = Game.ECS.getEntitiesWith(['vision', 'position']);
+                    for (let i = 0; i < seers.length; i++) {
+                        Game.Systems.Vision.update(seers[i]);
+                    }
+
+                    // Enemy attacks
+                    if (!Game.state.playerAttackedThisTurn && !Game.state.justDescended) {
+                        Game.Systems.Combat.processEnemyAttacks();
+                    }
+
+                    Game.Systems.StatusEffects.update();
+                    Game.state.justDescended = false;
+                    Game.state.turnCount++;
+                    
+                    return false;
+                }
             }
         }
     };

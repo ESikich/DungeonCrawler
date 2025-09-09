@@ -24,7 +24,8 @@ const Game = {
         floor: 0,
         playerGold: 0,
         playerAttackedThisTurn: false,
-        justDescended: false
+        justDescended: false,
+        speedActionCount: 0
     },
 
     // --- World Data ---
@@ -112,6 +113,7 @@ const Game = {
         this.state.playerGold = 0;
         this.state.playerAttackedThisTurn = false;
         this.state.justDescended = false;
+        this.state.speedActionCount = 0;
 
         this.effects.explosions = [];
         this.stats.reset();
