@@ -1,6 +1,5 @@
 /** =========================
- *  Visual Effects System - Fixed for Turn-Based Game
- *  Independent animation loop that runs continuously at 60fps
+ *  Visual Effects System
  *  ========================= */
 
 Game.VisualEffects = (function() {
@@ -8,7 +7,7 @@ Game.VisualEffects = (function() {
     
     // Private state
     let damageNumbers = [];
-    let screenShakeData = null;
+    let dungeonShakeData = null;
     let colorPulses = new Map();
     let animationFrameId = null;
     let isRunning = false;
@@ -22,31 +21,7 @@ Game.VisualEffects = (function() {
     }
     
     function updateEffects() {
-        updateScreenShake();
         updateDamageNumbers();
-        // Color pulses update automatically based on Date.now()
-    }
-    
-    function updateScreenShake() {
-        if (!screenShakeData) return;
-        
-        const canvas = Game.Renderer.getCanvas();
-        if (!canvas) return;
-        
-        const elapsed = Date.now() - screenShakeData.startTime;
-        const progress = elapsed / screenShakeData.duration;
-        
-        if (progress >= 1) {
-            canvas.style.transform = 'translate(0px, 0px)';
-            screenShakeData = null;
-            return;
-        }
-        
-        const currentIntensity = screenShakeData.intensity * Math.pow(1 - progress, 2);
-        const offsetX = (Math.random() - 0.5) * currentIntensity;
-        const offsetY = (Math.random() - 0.5) * currentIntensity;
-        
-        canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
     }
     
     function updateDamageNumbers() {
@@ -63,6 +38,25 @@ Game.VisualEffects = (function() {
                 damageNumbers.splice(i, 1);
             }
         }
+    }
+    
+    // Get current shake offset for renderer to use
+    function getCurrentShakeOffset() {
+        if (!dungeonShakeData) return { x: 0, y: 0 };
+        
+        const elapsed = Date.now() - dungeonShakeData.startTime;
+        const progress = elapsed / dungeonShakeData.duration;
+        
+        if (progress >= 1) {
+            dungeonShakeData = null;
+            return { x: 0, y: 0 };
+        }
+        
+        const currentIntensity = dungeonShakeData.intensity * Math.pow(1 - progress, 2);
+        const offsetX = (Math.random() - 0.5) * currentIntensity;
+        const offsetY = (Math.random() - 0.5) * currentIntensity;
+        
+        return { x: Math.round(offsetX), y: Math.round(offsetY) }; // Round to avoid sub-pixel rendering
     }
     
     return {
@@ -82,18 +76,28 @@ Game.VisualEffects = (function() {
             }
         },
         
-        // Screen Shake Effect
-        ScreenShake: {
+        // Dungeon Shake Effect
+        DungeonShake: {
             apply(intensity = 8, duration = 400) {
-                screenShakeData = {
+                dungeonShakeData = {
                     intensity: intensity,
                     duration: duration,
                     startTime: Date.now()
                 };
+                
+                console.log(`Dungeon shake applied: intensity=${intensity}, duration=${duration}`);
             },
             
             isActive() {
-                return screenShakeData !== null;
+                return dungeonShakeData !== null;
+            },
+            
+            getOffset() {
+                return getCurrentShakeOffset();
+            },
+            
+            stop() {
+                dungeonShakeData = null;
             }
         },
         
@@ -124,8 +128,11 @@ Game.VisualEffects = (function() {
                 });
             },
             
-            render(ctx) {
+            render(ctx, shakeOffset = { x: 0, y: 0 }) {
                 ctx.save();
+                
+                // Apply shake offset to damage numbers so they move with the world
+                ctx.translate(shakeOffset.x, shakeOffset.y);
                 
                 for (const num of damageNumbers) {
                     const alpha = num.life / num.maxLife;
@@ -158,11 +165,11 @@ Game.VisualEffects = (function() {
             add(entityId, color, speed = 0.003, intensity = 0.4, duration = null) {
                 colorPulses.set(entityId, {
                     baseColor: parseColor(color),
-                    speed: speed, // Much slower for turn-based game
+                    speed: speed,
                     intensity: intensity,
                     phase: Math.random() * Math.PI * 2,
                     startTime: Date.now(),
-                    duration: duration // null = infinite
+                    duration: duration
                 });
             },
             
@@ -174,7 +181,6 @@ Game.VisualEffects = (function() {
                 const pulse = colorPulses.get(entityId);
                 if (!pulse) return fallbackColor;
                 
-                // Check if pulse has expired
                 if (pulse.duration && (Date.now() - pulse.startTime) > pulse.duration) {
                     this.remove(entityId);
                     return fallbackColor;
@@ -256,22 +262,26 @@ Game.VisualEffects = (function() {
         
         // Render all visual effects
         render(ctx) {
-            this.DamageNumbers.render(ctx);
+            // Get current shake offset
+            const shakeOffset = this.DungeonShake.getOffset();
+            
+            // Render damage numbers with shake applied
+            this.DamageNumbers.render(ctx, shakeOffset);
         },
         
         // Clear all effects
         clear() {
             this.DamageNumbers.clear();
             this.ColorPulse.clear();
-            screenShakeData = null;
+            this.DungeonShake.stop();
         }
     };
 })();
 
-// Quick access functions
+// quick access functions
 Game.VFX = {
     shake(intensity, duration) {
-        Game.VisualEffects.ScreenShake.apply(intensity, duration);
+        Game.VisualEffects.DungeonShake.apply(intensity, duration);
     },
     
     damage(x, y, amount) {
@@ -300,5 +310,5 @@ Game.VFX = {
     
     stopPulse(entityId) {
         Game.VisualEffects.ColorPulse.remove(entityId);
-    }
+    },
 };

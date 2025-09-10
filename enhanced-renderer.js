@@ -1,18 +1,56 @@
 /** =========================
- *  Enhanced Renderer - Complete Integration with Visual Effects
+ *  Enhanced Renderer
  *  ========================= */
 
-// Store original methods
-const originalRenderEntity = Game.Renderer.renderEntity;
-const originalRender = Game.Renderer.render;
-const originalRenderEntities = Game.Renderer.renderEntities;
+// Store the original renderGameView method
+const originalRenderGameView = Game.Renderer.renderGameView;
 
-// Enhanced entity rendering
+// Override only the renderGameView method to add shake support
+Game.Renderer.renderGameView = function(gameState, world, playerEid) {
+    const ctx = this.getContext();
+    
+    // Get current shake offset
+    const shakeOffset = Game.VisualEffects.DungeonShake.getOffset();
+    
+    // === DUNGEON RENDERING (with shake) ===
+    ctx.save();
+    ctx.translate(shakeOffset.x, shakeOffset.y);
+    
+    // Render dungeon and entities with shake applied
+    this.renderDungeon(world, playerEid);
+    this.renderEntities(playerEid);
+    this.renderExplosions(Game.effects.explosions);
+    this.renderLighting(playerEid);
+    
+    ctx.restore();
+    
+    // === UI RENDERING (without shake) ===
+    // UI elements are rendered without the shake transform
+    Game.HUD.render(ctx, gameState, playerEid);
+    Game.HUD.renderMessages(ctx, world.messages);
+    
+    // === VISUAL EFFECTS (with shake applied to world effects) ===
+    Game.VisualEffects.render(ctx);
+    
+    // === OVERLAYS (without shake) ===
+    if (gameState.uiMode === 'inventory') {
+        this.renderInventoryOverlay(gameState, playerEid);
+    }
+    if (gameState.current === 'paused') {
+        this.renderPauseOverlay();
+    } else if (gameState.current === 'gameOver') {
+        this.renderGameOverOverlay(gameState);
+    }
+};
+
+// Enhanced entity rendering with color pulse support
+const originalRenderEntity = Game.Renderer.renderEntity;
 Game.Renderer.renderEntity = function(eid, pos, desc, hp) {
     const screenX = pos.x * Game.config.TILE_SIZE;
     const screenY = pos.y * Game.config.TILE_SIZE;
     
-    const pulsedColor = Game.VisualEffects.ColorPulse.getColor(eid, desc.color);
+    // Get pulsed color if available
+    const pulsedColor = Game.VisualEffects?.ColorPulse?.getColor(eid, desc.color) || desc.color;
     const color = parseColor(pulsedColor);
     
     const ctx = this.getContext();
@@ -22,55 +60,23 @@ Game.Renderer.renderEntity = function(eid, pos, desc, hp) {
     ctx.textBaseline = 'middle';
     ctx.fillText(desc.glyph, screenX + Game.config.TILE_SIZE / 2, screenY + Game.config.TILE_SIZE / 2);
     
+    // Enhanced health bar rendering
     if (hp && hp.hp < hp.maxHp && desc.glyph !== '@') {
-        Game.VisualEffects.HealthBars.renderEntityHealthBar(ctx, screenX, screenY, hp, {
-            animated: true,
-            offsetY: -6
-        });
-    }
-};
-
-// Enhanced main render
-Game.Renderer.render = function(gameState, world, playerEid) {
-    const ctx = this.getContext();
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    
-    switch (gameState.current) {
-        case 'start':
-            this.renderStartScreen();
-            break;
-        case 'playing':
-        case 'paused':
-        case 'gameOver':
-            if (playerEid) {
-                this.renderGameView(gameState, world, playerEid);
-                Game.VisualEffects.render(ctx);
-            }
-            break;
-    }
-};
-
-// Enhanced entities rendering
-Game.Renderer.renderEntities = function(playerEid) {
-    const vision = Game.ECS.getComponent(playerEid, 'vision');
-    if (!vision) return;
-    
-    const entities = Game.ECS.getEntitiesWith(['position', 'descriptor']);
-    
-    for (const eid of entities) {
-        const pos = Game.ECS.getComponent(eid, 'position');
-        const desc = Game.ECS.getComponent(eid, 'descriptor');
-        const hp = Game.ECS.getComponent(eid, 'health');
-        
-        if ((hp && hp.hp <= 0) || !vision.visible.has(`${pos.x},${pos.y}`)) {
-            continue;
+        if (Game.VisualEffects?.HealthBars?.renderEntityHealthBar) {
+            Game.VisualEffects.HealthBars.renderEntityHealthBar(ctx, screenX, screenY, hp, {
+                animated: true,
+                offsetY: -6
+            });
+        } else {
+            // Fallback to original health bar rendering
+            this.renderEntityHealthBar(screenX, screenY, hp);
         }
-        
-        this.renderEntity(eid, pos, desc, hp);
     }
-    
-    const ctx = this.getContext();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+};
+
+// Enhanced main render method to include visual effects
+const originalRender = Game.Renderer.render;
+Game.Renderer.render = function(gameState, world, playerEid) {
+    // Call original render logic
+    originalRender.call(this, gameState, world, playerEid);
 };

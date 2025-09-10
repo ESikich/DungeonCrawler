@@ -105,6 +105,8 @@ body::before {
     0 0 50px rgba(0, 255, 65, 0.3),
     inset 0 0 30px rgba(0, 0, 0, 0.8);
   overflow: hidden;
+  transform-origin: center center;
+  will-change: transform;
 }
 
 /* CRT Monitor Bezel */
@@ -136,6 +138,7 @@ body::before {
 
 @keyframes powerLED { from { opacity: 0.6; } to { opacity: 1; } }
 
+/* FIXED: Game container preserves transforms */
 .game-container {
   position: relative;
   background: #000;
@@ -143,6 +146,7 @@ body::before {
   overflow: hidden;
   z-index: 1;
   filter: blur(1px) brightness(1.2) contrast(1.0) saturate(1.3);
+  transform-origin: center center;
 }
 
 .crt-screen {
@@ -183,6 +187,7 @@ body::before {
   z-index: 11;
 }
 
+/* FIXED: Canvas no longer has conflicting animations */
 canvas {
   display: block;
   background: #000;
@@ -191,6 +196,10 @@ canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   filter: contrast(1.0) brightness(1.2) saturate(1.3);
+  transform-origin: center center;
+}
+
+canvas:not(.shaking) {
   animation: crtFlicker 0.15s ease-in-out infinite alternate;
 }
 
@@ -199,7 +208,13 @@ canvas {
   to   { filter: contrast(1.25) brightness(1.05) saturate(1.35); }
 }
 
-.webgl-container { position: relative; width: 100%; height: 100%; }
+.webgl-container { 
+  position: relative; 
+  width: 100%; 
+  height: 100%; 
+  /* ADDED: Preserve transforms */
+  transform-origin: center center;
+}
 
 #crtShaderCanvas {
   position: absolute;
@@ -207,6 +222,7 @@ canvas {
   width: 100%; height: 100%;
   pointer-events: none;
   z-index: 5;
+  transform-origin: center center;
 }
 
 .controls-grid {
@@ -235,6 +251,11 @@ canvas {
   box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
 }
 
+.debug-shake {
+  border: 2px solid red !important;
+  background: rgba(255, 0, 0, 0.1) !important;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .game-title { font-size: 1.8rem; }
@@ -244,7 +265,8 @@ canvas {
 
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
-  .crt-screen::before,
+  .crt-screen::before { animation: none !important; }
   canvas { animation: none !important; }
   body::before { display: none; }
+  .game-title { animation: none !important; }
 }
