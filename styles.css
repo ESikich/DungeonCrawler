@@ -1,33 +1,250 @@
-body {
-    margin: 0;
-    padding: 0;
-    background: #1a1a1a;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: white;
-    overflow: hidden;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
+:root {
+  --primary-glow: #00ff41;
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #1a1a2e;
+  --text-primary: #00ff41;
+  --text-secondary: #a0a0a0;
+  --border-primary: #333;
 }
 
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Animated starfield background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, #fff, transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 90px 40px, #fff, transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(2px 2px at 160px 30px, rgba(255,255,255,0.9), transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: starfield 20s linear infinite;
+  opacity: 0.3;
+  z-index: -1;
+}
+
+@keyframes starfield {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-100px); }
+}
+
+.game-header {
+  text-align: center;
+  margin-bottom: 1rem;
+  position: relative;
+}
+
+.game-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 2.5rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--primary-glow);
+  text-shadow:
+    0 0 5px var(--primary-glow),
+    0 0 10px var(--primary-glow),
+    0 0 15px var(--primary-glow),
+    0 0 20px var(--primary-glow);
+  animation: titlePulse 2s ease-in-out infinite alternate;
+  margin: 0;
+}
+
+@keyframes titlePulse {
+  from {
+    text-shadow:
+      0 0 5px var(--primary-glow),
+      0 0 10px var(--primary-glow),
+      0 0 15px var(--primary-glow),
+      0 0 20px var(--primary-glow);
+  }
+  to {
+    text-shadow:
+      0 0 10px var(--primary-glow),
+      0 0 20px var(--primary-glow),
+      0 0 30px var(--primary-glow),
+      0 0 40px var(--primary-glow);
+  }
+}
+
+.game-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.crt-container {
+  position: relative;
+  background: #1a1a1a;
+  border-radius: 15px;
+  padding: 40px 30px 60px 30px;
+  box-shadow:
+    0 0 50px rgba(0, 255, 65, 0.3),
+    inset 0 0 30px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+/* CRT Monitor Bezel */
+.crt-container::before {
+  content: '';
+  position: absolute;
+  top: 20px; left: 20px; right: 20px; bottom: 40px;
+  border: 3px solid #333;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(0, 255, 65, 0.2);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Power LED */
+.crt-container::after {
+  content: '';
+  position: absolute;
+  bottom: 15px; right: 25px;
+  width: 8px; height: 8px;
+  background: var(--primary-glow);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--primary-glow);
+  animation: powerLED 2s ease-in-out infinite alternate;
+  z-index: 3;
+}
+
+@keyframes powerLED { from { opacity: 0.6; } to { opacity: 1; } }
+
 .game-container {
-    background: #000;
-    border: 2px solid #666;
-    box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
-    position: relative;
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 1;
+  filter: blur(1px) brightness(1.2) contrast(1.0) saturate(1.3);
+}
+
+.crt-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+/* Scanlines overlay */
+.crt-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 65, 0.1) 2px,
+    rgba(0, 255, 65, 0.1) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+  animation: scanlines 0.1s linear infinite;
+}
+
+@keyframes scanlines {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(4px); }
+}
+
+/* Curvature/edge shading overlay */
+.crt-screen::after {
+  content: '';
+  position: absolute;
+  top: -5%; left: -5%; right: -5%; bottom: -5%;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.3) 100%);
+  pointer-events: none;
+  z-index: 11;
 }
 
 canvas {
-    display: block;
-    background: #000;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: -webkit-crisp-edges;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+  display: block;
+  background: #000;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-crisp-edges;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: contrast(1.0) brightness(1.2) saturate(1.3);
+  animation: crtFlicker 0.15s ease-in-out infinite alternate;
+}
+
+@keyframes crtFlicker {
+  from { filter: contrast(1.2) brightness(1.1) saturate(1.3); }
+  to   { filter: contrast(1.25) brightness(1.05) saturate(1.35); }
+}
+
+.webgl-container { position: relative; width: 100%; height: 100%; }
+
+#crtShaderCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  max-width: 300px;
+  margin: 0 auto 1rem auto;
+}
+
+.control-key {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.control-key:hover {
+  background: rgba(0, 255, 65, 0.2);
+  border-color: var(--primary-glow);
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .game-title { font-size: 1.8rem; }
+  .crt-container { margin: 0 10px; padding: 20px 15px 40px 15px; }
+  canvas { max-width: 100%; height: auto; }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .crt-screen::before,
+  canvas { animation: none !important; }
+  body::before { display: none; }
 }
