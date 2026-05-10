@@ -214,9 +214,10 @@ Game.InputHandler = function(gameController) {
                 return; 
             }
 
-            // Paused state
+            // Menu state
             if (Game.state.current === 'paused') { 
                 if (key === 'Escape') this.controller.handlePause(); 
+                if (key === 'r' || key === 'R') this.controller.resetGame();
                 e.preventDefault(); 
                 return; 
             }

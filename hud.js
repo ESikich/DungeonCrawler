@@ -1,29 +1,20 @@
 /** =========================
- *  HUD Module - Grid-Based Layout (No Overlaps Possible)
+ *  HUD Module - Readable Display Panel
  *  ========================= */
 
 Game.HUD = (function() {
     'use strict';
     
-    // HUD Configuration with rigid grid system
     const CONFIG = {
-        height: 110,
-        padding: 12,
-        
-        // Grid system - divide HUD into fixed zones
-        zones: {
-            leftWidth: 200,     // Health section
-            centerWidth: 300,   // XP and game info
-            rightWidth: 150,    // Gold and controls
-            rowHeight: 25       // Fixed row height
-        },
-        
+        height: 156,
+        padding: 20,
+        columnGap: 22,
+
         bars: {
-            width: 140,
-            height: 12
+            height: 20
         },
-        
-        maxMessages: 3,
+
+        maxMessages: 4,
         messageLifetime: 5000
     };
     
@@ -41,123 +32,168 @@ Game.HUD = (function() {
         textDim: '#aaa',
         gold: '#fc0',
         status: '#8f8',
-        info: '#88f'
+        info: '#88f',
+        panelLine: 'rgba(120, 255, 170, 0.28)'
     };
-    
-    // Helper functions
+
+    function getHudHeight(canvasHeight) {
+        const dungeonHeight = Game.config && Game.config.DUNGEON_PIXEL_HEIGHT ? Game.config.DUNGEON_PIXEL_HEIGHT : 0;
+        const availableHeight = dungeonHeight > 0 ? canvasHeight - dungeonHeight : 0;
+        return Math.max(CONFIG.height, availableHeight);
+    }
+
     function drawBar(ctx, x, y, width, height, fillPercent, bgColor, fillColor) {
-        // Background
         ctx.fillStyle = bgColor;
         ctx.fillRect(x, y, width, height);
-        
-        // Fill
+
         if (fillPercent > 0) {
             ctx.fillStyle = fillColor;
             ctx.fillRect(x, y, width * fillPercent, height);
         }
-        
-        // Border
+
         ctx.strokeStyle = '#666';
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, width, height);
     }
-    
+
+    function drawLabel(ctx, label, value, x, y, valueColor) {
+        ctx.font = '15px "Share Tech Mono", monospace';
+        ctx.fillStyle = COLORS.textDim;
+        ctx.fillText(label, x, y);
+
+        ctx.font = '28px "Share Tech Mono", monospace';
+        ctx.fillStyle = valueColor || COLORS.text;
+        ctx.fillText(value, x, y + 16);
+    }
+
+    function fitText(ctx, text, maxWidth) {
+        if (ctx.measureText(text).width <= maxWidth) return text;
+
+        let fitted = text;
+        while (fitted.length > 1 && ctx.measureText(fitted + '...').width > maxWidth) {
+            fitted = fitted.slice(0, -1);
+        }
+        return fitted + '...';
+    }
+
     function getHealthColor(hp, maxHp) {
         const ratio = hp / maxHp;
         if (ratio > 0.6) return COLORS.healthFill;
         if (ratio > 0.3) return COLORS.healthWarn;
         return COLORS.healthBad;
     }
-    
-    // Zone renderers - each zone is completely independent
-    const Zones = {
-        // LEFT ZONE: Health (200px wide)
-        renderLeftZone(ctx, x, y, zoneWidth, components) {
+
+    function getActiveEffects(status) {
+        if (!status) return [];
+
+        const effects = [];
+        if (status.strengthBoost > 0) effects.push(`STR +${status.strengthBonusAmount || status.strengthBoost} (${status.strengthBoost}t)`);
+        if (status.speedBoost > 0) effects.push(`SPD (${status.speedBoost}t)`);
+        if (status.lightBoost > 0) effects.push(`VIS (${status.lightBoost}t)`);
+        if (status.accuracyBoost > 0) effects.push(`ACC +${status.accuracyBonusAmount || '?'} (${status.accuracyBoost}t)`);
+        if (status.evasionBoost > 0) effects.push(`EVA +${status.evasionBonusAmount || status.agilityBonusAmount || '?'} (${status.evasionBoost}t)`);
+        if (status.clarityBoost > 0) effects.push(`CLARITY (${status.clarityBoost}t)`);
+        if (status.damageReductionBoost > 0) effects.push(`WARD (${status.damageReductionBoost}t)`);
+        if (status.regenBoost > 0) effects.push(`REGEN (${status.regenBoost}t)`);
+        if (status.tempMaxHpBoost > 0) effects.push(`MAX HP (${status.tempMaxHpBoost}t)`);
+        if (status.glassFuryBoost > 0) effects.push(`FURY (${status.glassFuryBoost}t)`);
+        if (status.wardingBoost > 0) effects.push(`WARDING (${status.wardingBoost}t)`);
+        if (status.poisoned > 0) effects.push(`POISON (${status.poisoned}t)`);
+        if (status.bleeding > 0) effects.push(`BLEED (${status.bleeding}t)`);
+        if (status.silenced > 0) effects.push(`SILENCE (${status.silenced}t)`);
+        return effects;
+    }
+
+    const Sections = {
+        renderMeters(ctx, x, y, width, components) {
             const hp = components.health;
             if (!hp) return;
-            
-            // Health text - Row 1
-            ctx.font = '14px monospace';
-            ctx.fillStyle = COLORS.text;
-            ctx.fillText(`Health: ${hp.hp}/${hp.maxHp}`, x, y + 14);
-            
-            // Health bar - Row 2
-            const barY = y + CONFIG.zones.rowHeight;
+            const meterGap = 18;
+            const meterWidth = Math.floor((width - meterGap) / 2);
+            const xpX = x + meterWidth + meterGap;
+
+            ctx.font = '16px "Share Tech Mono", monospace';
+            ctx.fillStyle = COLORS.textDim;
+            ctx.fillText('HEALTH', x, y);
+
+            ctx.font = '28px "Share Tech Mono", monospace';
+            ctx.fillStyle = getHealthColor(hp.hp, hp.maxHp);
+            ctx.fillText(`${hp.hp}/${hp.maxHp}`, x, y + 18);
+
+            const barY = y + 58;
             const fillPercent = hp.maxHp > 0 ? hp.hp / hp.maxHp : 0;
             const fillColor = getHealthColor(hp.hp, hp.maxHp);
-            drawBar(ctx, x, barY, CONFIG.bars.width, CONFIG.bars.height, fillPercent, COLORS.healthBg, fillColor);
-            
-            // Stats - Row 3
-            const stats = components.stats;
-            if (stats) {
-                ctx.font = '11px monospace';
-                ctx.fillStyle = COLORS.textDim;
-                ctx.fillText(`STR:${stats.strength} AGI:${stats.agility}`, x, y + CONFIG.zones.rowHeight * 2 + 12);
-                ctx.fillText(`ACC:${stats.accuracy} EVA:${stats.evasion}`, x, y + CONFIG.zones.rowHeight * 3 + 2);
-            }
-        },
-        
-        // CENTER ZONE: XP and Game Info (300px wide)
-        renderCenterZone(ctx, x, y, zoneWidth, components, gameState) {
+            drawBar(ctx, x, barY, meterWidth, CONFIG.bars.height, fillPercent, COLORS.healthBg, fillColor);
+
             const prog = components.progress;
-            
-            // XP text - Row 1
             if (prog) {
-                ctx.font = '14px monospace';
+                ctx.font = '16px "Share Tech Mono", monospace';
+                ctx.fillStyle = COLORS.textDim;
+                ctx.fillText(`LEVEL ${prog.level}`, xpX, y);
+
+                ctx.font = '28px "Share Tech Mono", monospace';
                 ctx.fillStyle = COLORS.info;
-                ctx.fillText(`Level ${prog.level} - XP: ${prog.xp}/${prog.next}`, x, y + 14);
-                
-                // XP bar - Row 2
-                const barY = y + CONFIG.zones.rowHeight;
-                const fillPercent = Math.min(1, prog.xp / Math.max(1, prog.next));
-                drawBar(ctx, x, barY, CONFIG.bars.width, CONFIG.bars.height, fillPercent, COLORS.xpBg, COLORS.xpFill);
-            }
-            
-            // Game info - Row 3
-            ctx.font = '12px monospace';
-            ctx.fillStyle = COLORS.textDim;
-            const area = gameState.area === 'overworld' ? 'Overworld' : `Floor ${gameState.floor}`;
-            ctx.fillText(`${area}  Turn: ${gameState.turnCount}`, x, y + CONFIG.zones.rowHeight * 2 + 12);
-            
-            // Inventory - Row 4
-            const inv = components.inventory;
-            if (inv) {
-                ctx.fillStyle = COLORS.info;
-                ctx.fillText(`Inventory: ${inv.items.length}/${inv.capacity} (I)`, x, y + CONFIG.zones.rowHeight * 3 + 2);
+                ctx.fillText(`XP ${prog.xp}/${prog.next}`, xpX, y + 18);
+
+                const xpFillPercent = Math.min(1, prog.xp / Math.max(1, prog.next));
+                drawBar(ctx, xpX, barY, meterWidth, CONFIG.bars.height, xpFillPercent, COLORS.xpBg, COLORS.xpFill);
             }
         },
-        
-        // RIGHT ZONE: Gold and Status (150px wide)
-        renderRightZone(ctx, x, y, zoneWidth, components, gameState) {
-            // Gold - Row 1
-            ctx.font = '16px monospace';
-            ctx.fillStyle = COLORS.gold;
-            ctx.fillText(`Gold: ${gameState.playerGold}`, x, y + 16);
-            
-            // Status effects - Row 2 & 3
-            const status = components.status;
-            if (status) {
-                ctx.font = '11px monospace';
-                ctx.fillStyle = COLORS.status;
-                let statusY = y + CONFIG.zones.rowHeight + 12;
-                
-                if (status.strengthBoost > 0) {
-                    ctx.fillText(`STR+${status.strengthBoost} (${status.strengthBoost}t)`, x, statusY);
-                    statusY += 12;
-                }
-                if (status.speedBoost > 0) {
-                    ctx.fillText(`SPD+${status.speedBoost} (${status.speedBoost}t)`, x, statusY);
-                    statusY += 12;
-                }
-                if (status.lightBoost > 0) {
-                    ctx.fillText(`VIS+${status.lightBoost} (${status.lightBoost}t)`, x, statusY);
-                }
-            }
-            
-            // Controls hint - Bottom
-            ctx.font = '10px monospace';
+
+        renderStatus(ctx, x, y, width, components) {
+            const effects = getActiveEffects(components.status);
+            if (effects.length === 0) return 0;
+
+            const statusText = effects.slice(0, 2).join('  ');
+
+            ctx.font = '16px "Share Tech Mono", monospace';
+            ctx.fillStyle = COLORS.status;
+            ctx.fillText('STATUS', x, y);
+
+            ctx.font = '22px "Share Tech Mono", monospace';
+            ctx.fillStyle = COLORS.status;
+            ctx.fillText(fitText(ctx, statusText, width), x, y + 30);
+            return 56;
+        },
+
+        renderControls(ctx, x, y, width) {
+            ctx.font = '20px "Share Tech Mono", monospace';
             ctx.fillStyle = COLORS.textDim;
-            ctx.fillText('R:Restart ESC:Pause', x, y + CONFIG.zones.rowHeight * 3 + 8);
+            ctx.fillText('WASD MOVE', x, y);
+            ctx.fillText('I INVENTORY', x + width * 0.34, y);
+            ctx.fillText('ESC MENU', x + width * 0.68, y);
+        },
+
+        renderUpdates(ctx, x, y, width, messages, bottomY) {
+            ctx.font = '18px "Share Tech Mono", monospace';
+            ctx.fillStyle = COLORS.textDim;
+            ctx.fillText('UPDATES', x, y);
+
+            ctx.font = '18px "Share Tech Mono", monospace';
+            ctx.fillStyle = '#ddd';
+
+            if (!messages || messages.length === 0) {
+                ctx.fillStyle = COLORS.textDim;
+                ctx.fillText('No recent updates', x, y + 32);
+                return;
+            }
+
+            const lineHeight = 22;
+            const maxLines = Math.max(1, Math.floor((bottomY - (y + 30)) / lineHeight));
+            const messagesToShow = Math.min(CONFIG.maxMessages, maxLines);
+            const startIndex = Math.max(0, messages.length - messagesToShow);
+            let lineY = y + 30;
+            for (let i = startIndex; i < messages.length; i++) {
+                const message = messages[i];
+                const age = Date.now() - message.time;
+                const alpha = Math.max(0.45, 1 - (age / CONFIG.messageLifetime));
+
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = i === messages.length - 1 ? '#fff' : '#bbb';
+                ctx.fillText(fitText(ctx, message.text, width), x, lineY);
+                ctx.globalAlpha = 1;
+                lineY += lineHeight;
+            }
         }
     };
     
@@ -173,56 +209,67 @@ Game.HUD = (function() {
             
             const canvasWidth = ctx.canvas.width;
             const canvasHeight = ctx.canvas.height;
-            const hudY = canvasHeight - CONFIG.height;
+            const hudHeight = getHudHeight(canvasHeight);
+            const hudY = canvasHeight - hudHeight;
             
             // Setup
             ctx.save();
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             
-            // Background
             ctx.fillStyle = COLORS.background;
-            ctx.fillRect(0, hudY, canvasWidth, CONFIG.height);
+            ctx.fillRect(0, hudY, canvasWidth, hudHeight);
             ctx.strokeStyle = COLORS.border;
             ctx.lineWidth = 1;
-            ctx.strokeRect(0, hudY, canvasWidth, CONFIG.height);
-            
-            // Calculate zone positions - completely separate with gaps
-            const zones = CONFIG.zones;
-            const totalContentWidth = zones.leftWidth + zones.centerWidth + zones.rightWidth;
-            const remainingSpace = canvasWidth - totalContentWidth - (CONFIG.padding * 2);
-            const gap = Math.max(20, remainingSpace / 2); // At least 20px gap
-            
-            const leftX = CONFIG.padding;
-            const centerX = leftX + zones.leftWidth + gap;
-            const rightX = centerX + zones.centerWidth + gap;
+            ctx.strokeRect(0, hudY, canvasWidth, hudHeight);
+
+            ctx.strokeStyle = COLORS.panelLine;
+            ctx.beginPath();
+            ctx.moveTo(CONFIG.padding, hudY + 1);
+            ctx.lineTo(canvasWidth - CONFIG.padding, hudY + 1);
+            ctx.stroke();
+
+            const contentWidth = canvasWidth - CONFIG.padding * 2;
+            const gap = CONFIG.columnGap;
+            const meterWidth = Math.floor(contentWidth * 0.34);
+            const infoWidth = contentWidth - meterWidth - gap;
+            const meterX = CONFIG.padding;
+            const infoX = meterX + meterWidth + gap;
             const contentY = hudY + CONFIG.padding;
-            
-            // Debug zone boundaries (remove in production)
+            const controlsY = hudY + hudHeight - 26;
+
             if (false) { // Set to true to see zone boundaries
                 ctx.strokeStyle = '#f00';
-                ctx.strokeRect(leftX, contentY, zones.leftWidth, CONFIG.height - CONFIG.padding * 2);
+                ctx.strokeRect(meterX, contentY, meterWidth, hudHeight - CONFIG.padding * 2);
                 ctx.strokeStyle = '#0f0';
-                ctx.strokeRect(centerX, contentY, zones.centerWidth, CONFIG.height - CONFIG.padding * 2);
-                ctx.strokeStyle = '#00f';
-                ctx.strokeRect(rightX, contentY, zones.rightWidth, CONFIG.height - CONFIG.padding * 2);
+                ctx.strokeRect(infoX, contentY, infoWidth, hudHeight - CONFIG.padding * 2);
             }
-            
-            // Render each zone independently
-            Zones.renderLeftZone(ctx, leftX, contentY, zones.leftWidth, components);
-            Zones.renderCenterZone(ctx, centerX, contentY, zones.centerWidth, components, gameState);
-            Zones.renderRightZone(ctx, rightX, contentY, zones.rightWidth, components, gameState);
+
+            ctx.strokeStyle = COLORS.panelLine;
+            ctx.beginPath();
+            ctx.moveTo(infoX - gap / 2, contentY + 4);
+            ctx.lineTo(infoX - gap / 2, controlsY - 10);
+            ctx.moveTo(CONFIG.padding, controlsY - 12);
+            ctx.lineTo(canvasWidth - CONFIG.padding, controlsY - 12);
+            ctx.stroke();
+
+            Sections.renderMeters(ctx, meterX, contentY, meterWidth - 8, components);
+            const statusHeight = Sections.renderStatus(ctx, infoX, contentY, infoWidth, components);
+            const updatesY = contentY + statusHeight;
+            Sections.renderUpdates(ctx, infoX, updatesY, infoWidth, Game.world.messages, controlsY - 16);
+            Sections.renderControls(ctx, CONFIG.padding, controlsY, contentWidth);
 
             if (components.health && components.health.hp / components.health.maxHp < 0.3) {
                 const pulse = 0.55 + Math.sin(Date.now() * 0.004) * 0.25;
-                const barY = contentY + CONFIG.zones.rowHeight;
+                const healthMeterWidth = Math.floor((meterWidth - 8 - 18) / 2);
+                const barY = contentY + 58;
 
                 ctx.save();
                 ctx.shadowColor = '#ff4444';
                 ctx.shadowBlur = 4 * pulse;
                 ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.5})`;
                 ctx.lineWidth = 2;
-                ctx.strokeRect(leftX - 2, barY - 2, CONFIG.bars.width + 4, CONFIG.bars.height + 4);
+                ctx.strokeRect(meterX - 2, barY - 2, healthMeterWidth + 4, CONFIG.bars.height + 4);
                 ctx.restore();
             }
             
@@ -230,41 +277,7 @@ Game.HUD = (function() {
         },
         
         renderMessages(ctx, messages) {
-            if (!messages || messages.length === 0) return;
-            
-            const canvasWidth = ctx.canvas.width;
-            const canvasHeight = ctx.canvas.height;
-            const hudY = canvasHeight - CONFIG.height;
-            
-            ctx.save();
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            
-            // Position messages above HUD with proper spacing
-            let y = hudY - 15;
-            const startIndex = Math.max(0, messages.length - CONFIG.maxMessages);
-            
-            for (let i = messages.length - 1; i >= startIndex; i--) {
-                const message = messages[i];
-                const age = Date.now() - message.time;
-                const alpha = Math.max(0.4, 1 - (age / CONFIG.messageLifetime));
-                
-                // Message background
-                const textWidth = ctx.measureText(message.text).width;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                ctx.fillRect(canvasWidth - textWidth - 16, y - 2, textWidth + 12, 16);
-                
-                // Message text
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = '#ddd';
-                ctx.fillText(message.text, canvasWidth - 8, y);
-                ctx.globalAlpha = 1;
-                
-                y -= 16;
-            }
-            
-            ctx.restore();
+            // Messages are rendered inside the HUD panel.
         },
         
         gatherComponents(playerEid) {
@@ -287,11 +300,12 @@ Game.HUD = (function() {
         },
         
         getBounds(canvasWidth, canvasHeight) {
+            const hudHeight = getHudHeight(canvasHeight);
             return {
                 x: 0,
-                y: canvasHeight - CONFIG.height,
+                y: canvasHeight - hudHeight,
                 width: canvasWidth,
-                height: CONFIG.height
+                height: hudHeight
             };
         },
         

@@ -13,7 +13,7 @@ Open `index.html` in a browser.
 - `Enter` or `Space`: use selected inventory item
 - `D`: drop selected inventory item
 - `R`: restart
-- `Esc`: pause or close inventory
+- `Esc`: open menu or close inventory
 
 ## Validate
 

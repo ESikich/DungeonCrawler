@@ -35,6 +35,27 @@ Game.Renderer = (function() {
         if (tile.special === 'bridge') return 'rgb(82, 48, 24)';
         return 'white';
     }
+
+    function getActiveEffects(status) {
+        if (!status) return [];
+
+        const effects = [];
+        if (status.strengthBoost > 0) effects.push(`Strength +${status.strengthBonusAmount || status.strengthBoost} (${status.strengthBoost}t)`);
+        if (status.speedBoost > 0) effects.push(`Speed (${status.speedBoost}t)`);
+        if (status.lightBoost > 0) effects.push(`Vision (${status.lightBoost}t)`);
+        if (status.accuracyBoost > 0) effects.push(`Accuracy +${status.accuracyBonusAmount || '?'} (${status.accuracyBoost}t)`);
+        if (status.evasionBoost > 0) effects.push(`Evasion +${status.evasionBonusAmount || status.agilityBonusAmount || '?'} (${status.evasionBoost}t)`);
+        if (status.clarityBoost > 0) effects.push(`Clarity (${status.clarityBoost}t)`);
+        if (status.damageReductionBoost > 0) effects.push(`Guard (${status.damageReductionBoost}t)`);
+        if (status.regenBoost > 0) effects.push(`Regen (${status.regenBoost}t)`);
+        if (status.tempMaxHpBoost > 0) effects.push(`Max HP (${status.tempMaxHpBoost}t)`);
+        if (status.glassFuryBoost > 0) effects.push(`Fury (${status.glassFuryBoost}t)`);
+        if (status.wardingBoost > 0) effects.push(`Warding (${status.wardingBoost}t)`);
+        if (status.poisoned > 0) effects.push(`Poison (${status.poisoned}t)`);
+        if (status.bleeding > 0) effects.push(`Bleed (${status.bleeding}t)`);
+        if (status.silenced > 0) effects.push(`Silence (${status.silenced}t)`);
+        return effects;
+    }
     
     // Public API
     return {
@@ -104,7 +125,7 @@ Game.Renderer = (function() {
                 this.renderInventoryOverlay(gameState, playerEid);
             }
             if (gameState.current === 'paused') {
-                this.renderPauseOverlay();
+                this.renderMenuOverlay(gameState, playerEid);
             } else if (gameState.current === 'gameOver') {
                 this.renderGameOverOverlay(gameState);
             }
@@ -436,8 +457,8 @@ Game.Renderer = (function() {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // Inventory panel
-            const panelWidth = 520;
-            const panelHeight = 380;
+            const panelWidth = 620;
+            const panelHeight = 520;
             const panelX = (canvas.width - panelWidth) / 2;
             const panelY = (canvas.height - panelHeight) / 2;
             
@@ -450,61 +471,61 @@ Game.Renderer = (function() {
             
             // Title
             ctx.fillStyle = '#fff';
-            ctx.font = '20px monospace';
+            ctx.font = '30px monospace';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             const itemCount = inventory ? inventory.items.length : 0;
             const capacity = inventory ? inventory.capacity : 0;
-            ctx.fillText(`Inventory (${itemCount}/${capacity})`, panelX + 16, panelY + 12);
+            ctx.fillText(`Inventory (${itemCount}/${capacity})`, panelX + 22, panelY + 18);
             
             // Render items
             if (!inventory || inventory.items.length === 0) {
                 ctx.fillStyle = '#bbb';
-                ctx.font = '18px monospace';
-                ctx.fillText('(empty)', panelX + 16, panelY + 60);
+                ctx.font = '24px monospace';
+                ctx.fillText('(empty)', panelX + 22, panelY + 86);
             } else {
-                ctx.font = '15px monospace';
+                ctx.font = '20px monospace';
                 ctx.textBaseline = 'alphabetic';
                 
-                const rowHeight = 20;
+                const rowHeight = 28;
                 const selectedIndex = clamp(gameState.invSelIndex, 0, inventory.items.length - 1);
                 const itemsToShow = Math.min(inventory.items.length, 12);
                 
                 for (let i = 0; i < itemsToShow; i++) {
-                    const itemY = panelY + 60 + i * rowHeight;
+                    const itemY = panelY + 88 + i * rowHeight;
                     
                     // Selection highlight
                     if (i === selectedIndex) {
                         ctx.fillStyle = 'rgba(60,60,120,0.85)';
-                        ctx.fillRect(panelX + 10, itemY - 12, panelWidth - 20, rowHeight);
+                        ctx.fillRect(panelX + 16, itemY - 20, panelWidth - 32, rowHeight);
                     }
                     
                     // Item text
                     const item = inventory.items[i];
                     const rarityColor = getItemRarityColor(item.rarity);
                     ctx.fillStyle = rarityColor;
-                    ctx.fillText(`${(i + 1)}. ${item.name || 'Item'}`, panelX + 16, itemY);
+                    ctx.fillText(`${(i + 1)}. ${item.name || 'Item'}`, panelX + 24, itemY);
                 }
                 
                 // Description at the very bottom - just above instructions
                 const selectedItem = inventory.items[selectedIndex];
                 if (selectedItem) {
-                    ctx.font = '12px monospace';
+                    ctx.font = '16px monospace';
                     ctx.fillStyle = '#9cf';
                     ctx.textBaseline = 'top';
                     
                     const desc = selectedItem.desc || 'No description.';
-                    const maxChars = Math.floor((panelWidth - 32) / 7);
+                    const maxChars = Math.floor((panelWidth - 44) / 9);
                     const displayDesc = desc.length > maxChars ? desc.substring(0, maxChars - 3) + '...' : desc;
-                    ctx.fillText(displayDesc, panelX + 16, panelY + panelHeight - 30);
+                    ctx.fillText(displayDesc, panelX + 22, panelY + panelHeight - 58);
                 }
             }
             
             // Instructions at very bottom
-            ctx.font = '11px monospace';
+            ctx.font = '16px monospace';
             ctx.fillStyle = '#ccc';
             ctx.textBaseline = 'top';
-            ctx.fillText('↑/↓: select | ENTER: use | D: drop | I/ESC: close', panelX + 16, panelY + panelHeight - 15);
+            ctx.fillText('Up/Down: select   Enter: use   D: drop   I/Esc: close', panelX + 22, panelY + panelHeight - 30);
         },
         
         renderInventoryPanel(x, y, width, height, inventory, selectedIndex) {
@@ -517,36 +538,36 @@ Game.Renderer = (function() {
             
             // Title
             ctx.fillStyle = '#fff';
-            ctx.font = '22px monospace';
+            ctx.font = '30px monospace';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             const itemCount = inventory ? inventory.items.length : 0;
             const capacity = inventory ? inventory.capacity : 0;
-            ctx.fillText(`Inventory (${itemCount}/${capacity})`, x + 16, y + 16);
+            ctx.fillText(`Inventory (${itemCount}/${capacity})`, x + 22, y + 18);
             
             // Instructions - Split into multiple lines and ensure they fit
-            ctx.font = '12px monospace';
+            ctx.font = '16px monospace';
             ctx.fillStyle = '#ccc';
-            const instructY = y + height - 40;
-            ctx.fillText('↑/↓ or W/S: select   ENTER/SPACE: use   D: drop', x + 16, instructY);
-            ctx.fillText('I/ESC: close inventory', x + 16, instructY + 16);
+            const instructY = y + height - 52;
+            ctx.fillText('Up/Down or W/S: select   Enter/Space: use   D: drop', x + 22, instructY);
+            ctx.fillText('I/Esc: close inventory', x + 22, instructY + 22);
             
             // Item list - Reserve more space for instructions
-            this.renderInventoryItems(x + 16, y + 60, width - 32, height - 140, inventory, selectedIndex);
+            this.renderInventoryItems(x + 22, y + 86, width - 44, height - 170, inventory, selectedIndex);
         },
         
         renderInventoryItems(x, y, width, height, inventory, selectedIndex) {
             if (!inventory || inventory.items.length === 0) {
                 ctx.fillStyle = '#bbb';
-                ctx.font = '18px monospace';
+                ctx.font = '24px monospace';
                 ctx.fillText('(empty)', x, y);
                 return;
             }
             
-            ctx.font = '15px monospace';
+            ctx.font = '20px monospace';
             ctx.textBaseline = 'alphabetic';
             
-            const rowHeight = 20; // Reduced from 24 to fit more items
+            const rowHeight = 28;
             selectedIndex = clamp(selectedIndex, 0, inventory.items.length - 1);
             
             // Reserve space for description (2 lines max)
@@ -558,12 +579,12 @@ Game.Renderer = (function() {
             const itemsToShow = Math.min(inventory.items.length, 12);
             
             for (let i = 0; i < itemsToShow; i++) {
-                const itemY = y + i * rowHeight + 15; // +15 for baseline
+                const itemY = y + i * rowHeight + 20;
                 
                 // Selection highlight
                 if (i === selectedIndex) {
                     ctx.fillStyle = 'rgba(60,60,120,0.85)';
-                    ctx.fillRect(x - 6, itemY - 12, width, rowHeight);
+                    ctx.fillRect(x - 8, itemY - 20, width, rowHeight);
                 }
                 
                 // Item text
@@ -578,31 +599,88 @@ Game.Renderer = (function() {
                 const selectedItem = inventory.items[selectedIndex];
                 const detailsY = y + availableHeight + 10;
                 
-                ctx.font = '12px monospace';
+                ctx.font = '16px monospace';
                 ctx.fillStyle = '#9cf';
                 ctx.textBaseline = 'top';
                 
                 // Single line description, truncate if too long
                 const desc = selectedItem.desc || 'No description.';
-                const maxChars = Math.floor(width / 7); // Approximate chars that fit
+                const maxChars = Math.floor(width / 9);
                 const displayDesc = desc.length > maxChars ? desc.substring(0, maxChars - 3) + '...' : desc;
                 ctx.fillText(displayDesc, x, detailsY);
             }
         },
         
-        renderPauseOverlay() {
+        renderMenuOverlay(gameState, playerEid) {
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.font = '48px monospace';
-            ctx.fillStyle = 'yellow';
+
+            const panelWidth = 520;
+            const panelHeight = 360;
+            const panelX = (canvas.width - panelWidth) / 2;
+            const panelY = (canvas.height - panelHeight) / 2;
+            const health = Game.ECS.getComponent(playerEid, 'health');
+            const stats = Game.ECS.getComponent(playerEid, 'stats');
+            const progress = Game.ECS.getComponent(playerEid, 'progress');
+            const inventory = Game.ECS.getComponent(playerEid, 'inventory');
+            const status = Game.ECS.getComponent(playerEid, 'status');
+            const effects = getActiveEffects(status);
+            const area = gameState.area === 'overworld' ? 'Overworld' : `Floor ${gameState.floor}`;
+
+            ctx.fillStyle = 'rgba(20,20,40,0.96)';
+            ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+            ctx.strokeStyle = '#88f';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
             ctx.textAlign = 'center';
-            ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
-            
-            ctx.font = '20px monospace';
-            ctx.fillStyle = 'white';
-            ctx.fillText('Press ESC to resume', canvas.width / 2, canvas.height / 2 + 40);
-            
+            ctx.textBaseline = 'top';
+            ctx.font = '38px monospace';
+            ctx.fillStyle = 'yellow';
+            ctx.fillText('MENU', canvas.width / 2, panelY + 22);
+
+            ctx.textAlign = 'left';
+            ctx.font = '18px monospace';
+            ctx.fillStyle = '#fff';
+            const leftX = panelX + 34;
+            const rightX = panelX + 286;
+            let y = panelY + 98;
+
+            ctx.fillStyle = '#ddd';
+            ctx.fillText(`Location: ${area}`, leftX, y);
+            ctx.fillText(`Health: ${health ? `${health.hp}/${health.maxHp}` : '-'}`, rightX, y);
+            y += 28;
+
+            const levelText = progress ? `${progress.level} (${progress.xp}/${progress.next} XP)` : '-';
+            ctx.fillText(`Level: ${levelText}`, leftX, y);
+            if (stats) ctx.fillText(`STR: ${stats.strength}`, rightX, y);
+            y += 28;
+
+            ctx.fillText(`Turn: ${gameState.turnCount}`, leftX, y);
+            if (stats) ctx.fillText(`AGI: ${stats.agility}`, rightX, y);
+            y += 28;
+
+            ctx.fillText(`Gold: ${gameState.playerGold}`, leftX, y);
+            if (stats) ctx.fillText(`ACC: ${stats.accuracy}`, rightX, y);
+            y += 28;
+
+            const itemText = inventory ? `${inventory.items.length}/${inventory.capacity}` : '-';
+            ctx.fillText(`Inventory: ${itemText}`, leftX, y);
+            if (stats) ctx.fillText(`EVA: ${stats.evasion}`, rightX, y);
+            y += 34;
+
+            ctx.fillStyle = '#88f';
+            ctx.fillText('STATUS', leftX, y);
+            y += 28;
+
+            ctx.fillStyle = effects.length ? '#8f8' : '#aaa';
+            ctx.fillText(effects.length ? effects.slice(0, 2).join(' | ') : 'Clear', leftX, y);
+
+            ctx.textAlign = 'center';
+            ctx.font = '18px monospace';
+            ctx.fillStyle = '#ccc';
+            ctx.fillText('ESC: resume    R: restart', canvas.width / 2, panelY + panelHeight - 44);
+
             ctx.textAlign = 'left';
         },
         
