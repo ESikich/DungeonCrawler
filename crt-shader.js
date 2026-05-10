@@ -25,6 +25,13 @@ class CRTShader {
     };
   }
 
+  setArea(area) {
+    const overworld = area === 'overworld';
+    this.settings.glow = !overworld;
+    this.settings.brightness = overworld ? 1.08 : 1.3;
+    this.settings.saturation = overworld ? 1.12 : 1.3;
+  }
+
   initShaders() {
     const vertexShaderSource = `
       attribute vec4 aVertexPosition;
@@ -260,6 +267,9 @@ window.addEventListener('load', function () {
     `;
 
     (function renderCRT() {
+      if (typeof Game !== 'undefined' && Game.state) {
+        crtShader.setArea(Game.state.area);
+      }
       crtShader.render(gameCanvas);
       requestAnimationFrame(renderCRT);
     })();

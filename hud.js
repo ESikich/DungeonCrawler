@@ -116,7 +116,8 @@ Game.HUD = (function() {
             // Game info - Row 3
             ctx.font = '12px monospace';
             ctx.fillStyle = COLORS.textDim;
-            ctx.fillText(`Floor: ${gameState.floor}  Turn: ${gameState.turnCount}`, x, y + CONFIG.zones.rowHeight * 2 + 12);
+            const area = gameState.area === 'overworld' ? 'Overworld' : `Floor ${gameState.floor}`;
+            ctx.fillText(`${area}  Turn: ${gameState.turnCount}`, x, y + CONFIG.zones.rowHeight * 2 + 12);
             
             // Inventory - Row 4
             const inv = components.inventory;
@@ -213,13 +214,13 @@ Game.HUD = (function() {
             Zones.renderRightZone(ctx, rightX, contentY, zones.rightWidth, components, gameState);
 
             if (components.health && components.health.hp / components.health.maxHp < 0.3) {
-                const pulse = 0.3 + Math.sin(Date.now() * 0.008) * 0.7;
+                const pulse = 0.55 + Math.sin(Date.now() * 0.004) * 0.25;
                 const barY = contentY + CONFIG.zones.rowHeight;
 
                 ctx.save();
                 ctx.shadowColor = '#ff4444';
-                ctx.shadowBlur = 8 * pulse;
-                ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.8})`;
+                ctx.shadowBlur = 4 * pulse;
+                ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.5})`;
                 ctx.lineWidth = 2;
                 ctx.strokeRect(leftX - 2, barY - 2, CONFIG.bars.width + 4, CONFIG.bars.height + 4);
                 ctx.restore();

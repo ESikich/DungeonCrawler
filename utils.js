@@ -38,6 +38,7 @@ function parseColor(name) {
         brown: [139, 69, 19],
         purple: [128, 0, 128],
         cyan: [100, 255, 255],
+        royalBlue: [65, 105, 225],
         orange: [255, 165, 0],
         gold: [255, 215, 0]
     };

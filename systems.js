@@ -20,12 +20,19 @@ Game.Systems = (function() {
             handleMove(eid, toX, toY) {
                 const pos = Game.ECS.getComponent(eid, 'position');
                 if (!pos) return;
+                if (eid === Game.world.playerEid && Game.world.overworldTransition) return;
 
                 if (!inBounds(toX, toY)) { 
+                    if (eid === Game.world.playerEid && Game.state.area === 'overworld') {
+                        Game.Systems.World.changeOverworldSection(toX, toY);
+                        return;
+                    }
                     if (eid === Game.world.playerEid) addMessage("Can't go that way!"); 
                     return; 
                 }
                 if (!Game.world.dungeonGrid[toY][toX].walkable) return;
+                const fromX = pos.x;
+                const fromY = pos.y;
 
                 const at = Game.ECS.getEntitiesAt(toX, toY);
                 for (let i = 0; i < at.length; i++) {
@@ -47,7 +54,14 @@ Game.Systems = (function() {
                 if (eid === Game.world.playerEid) { 
                     Game.Items.pickupAt(toX, toY);
                     const t = Game.world.dungeonGrid[toY][toX];
+                    if (t && t.special === 'dungeonEntrance') Game.Systems.World.enterDungeon();
                     if (t && t.glyph === '>') Game.Systems.World.nextLevel();
+                    if (t && t.glyph === '<') {
+                        Game.Systems.World.previousLevel({
+                            x: Math.sign(toX - fromX),
+                            y: Math.sign(toY - fromY)
+                        });
+                    }
                 }
             }
         },
@@ -467,45 +481,324 @@ Game.Systems = (function() {
         
         // World Management System
         World: {
+            cloneValue(value) {
+                if (value instanceof Set) return new Set(Array.from(value));
+                if (Array.isArray(value)) return value.map(item => this.cloneValue(item));
+                if (value && typeof value === 'object') {
+                    const clone = {};
+                    for (const key in value) clone[key] = this.cloneValue(value[key]);
+                    return clone;
+                }
+                return value;
+            },
+
+            cloneGrid(grid) {
+                return grid.map(row => row.map(tile => this.cloneValue(tile)));
+            },
+
+            cloneRooms(rooms) {
+                return rooms.map(room => {
+                    const restored = new Room(room.x, room.y, room.width, room.height, room.type);
+                    restored.connected = !!room.connected;
+                    restored.features = this.cloneValue(room.features || []);
+                    return restored;
+                });
+            },
+
+            snapshotNonPlayerEntities() {
+                const snapshots = [];
+                const componentTypes = Game.ECS.getComponentTypes();
+
+                Game.ECS.getAllEntities().forEach(eid => {
+                    if (eid === Game.world.playerEid) return;
+
+                    const components = {};
+                    for (let i = 0; i < componentTypes.length; i++) {
+                        const type = componentTypes[i];
+                        const component = Game.ECS.getComponent(eid, type);
+                        if (component) components[type] = this.cloneValue(component);
+                    }
+                    snapshots.push({components});
+                });
+
+                return snapshots;
+            },
+
+            restoreNonPlayerEntities(snapshots) {
+                if (!snapshots) return;
+
+                for (let i = 0; i < snapshots.length; i++) {
+                    const eid = Game.ECS.createEntity();
+                    const components = snapshots[i].components || {};
+                    for (const type in components) {
+                        Game.ECS.addComponent(eid, type, this.cloneValue(components[type]));
+                    }
+                }
+            },
+
+            saveCurrentDungeonLevel() {
+                if (Game.state.area !== 'dungeon' || Game.state.floor >= 0) return;
+
+                Game.world.dungeonLevels[Game.state.floor] = {
+                    grid: this.cloneGrid(Game.world.dungeonGrid),
+                    rooms: this.cloneRooms(Game.world.rooms),
+                    stairsPos: this.cloneValue(Game.world.stairsPos),
+                    entities: this.snapshotNonPlayerEntities()
+                };
+            },
+
+            saveCurrentOverworldSection() {
+                if (Game.state.area !== 'overworld') return;
+
+                const section = Game.world.overworldSection || {x: 0, y: 0};
+                const key = overworldSectionKey(section);
+                Game.world.overworldSections[key] = this.cloneGrid(Game.world.dungeonGrid);
+
+                if (section.x === 0 && section.y === 0) {
+                    Game.world.overworldGrid = Game.world.overworldSections[key];
+                }
+            },
+
+            clearNonPlayerEntities() {
+                const rem = [];
+                Game.ECS.getAllEntities().forEach(function(eid) {
+                    if (eid !== Game.world.playerEid) rem.push(eid);
+                });
+                for (let i = 0; i < rem.length; i++) Game.ECS.destroyEntity(rem[i]);
+            },
+
+            restoreDungeonLevel(floor) {
+                const cached = Game.world.dungeonLevels[floor];
+                if (!cached) return false;
+
+                this.clearNonPlayerEntities();
+                Game.world.dungeonGrid = this.cloneGrid(cached.grid);
+                Game.world.rooms = this.cloneRooms(cached.rooms);
+                Game.world.stairsPos = this.cloneValue(cached.stairsPos);
+                this.restoreNonPlayerEntities(cached.entities);
+                return true;
+            },
+
+            loadOverworldSection(section) {
+                const key = overworldSectionKey(section);
+                const cached = Game.world.overworldSections[key];
+
+                if (cached) {
+                    Game.world.dungeonGrid = this.cloneGrid(cached);
+                    Game.world.rooms = [new Room(1, 1, Game.config.DUNGEON_WIDTH - 2, Game.config.DUNGEON_HEIGHT - 2, 'overworld')];
+                    Game.world.stairsPos = { x: null, y: null };
+                    Game.world.overworldSection = {x: section.x, y: section.y};
+                    pruneInvalidBridges();
+                    pruneWideBridgeComponents();
+                    cleanupTinyWater();
+                    return;
+                }
+
+                generateOverworldSection(section);
+                Game.world.overworldSections[key] = this.cloneGrid(Game.world.dungeonGrid);
+            },
+
+            changeOverworldSection(toX, toY) {
+                const oldGrid = this.cloneGrid(Game.world.dungeonGrid);
+                this.saveCurrentOverworldSection();
+
+                const section = Game.world.overworldSection || {x: 0, y: 0};
+                const nextSection = {x: section.x, y: section.y};
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                let direction = {x: 0, y: 0};
+
+                if (toX < 0) {
+                    nextSection.x -= 1;
+                    direction = {x: -1, y: 0};
+                    p.x = Game.config.DUNGEON_WIDTH - 1;
+                    p.y = toY;
+                } else if (toX >= Game.config.DUNGEON_WIDTH) {
+                    nextSection.x += 1;
+                    direction = {x: 1, y: 0};
+                    p.x = 0;
+                    p.y = toY;
+                } else if (toY < 0) {
+                    nextSection.y -= 1;
+                    direction = {x: 0, y: -1};
+                    p.x = toX;
+                    p.y = Game.config.DUNGEON_HEIGHT - 1;
+                } else if (toY >= Game.config.DUNGEON_HEIGHT) {
+                    nextSection.y += 1;
+                    direction = {x: 0, y: 1};
+                    p.x = toX;
+                    p.y = 0;
+                }
+
+                p.x = Math.min(Math.max(p.x, 0), Game.config.DUNGEON_WIDTH - 1);
+                p.y = Math.min(Math.max(p.y, 0), Game.config.DUNGEON_HEIGHT - 1);
+
+                this.loadOverworldSection(nextSection);
+
+                if (!Game.world.dungeonGrid[p.y][p.x].walkable) {
+                    Game.world.dungeonGrid[p.y][p.x] = Tile.grass();
+                    this.saveCurrentOverworldSection();
+                }
+
+                Game.world.overworldTransition = {
+                    fromGrid: oldGrid,
+                    toGrid: this.cloneGrid(Game.world.dungeonGrid),
+                    direction: direction,
+                    startTime: Date.now(),
+                    duration: 430
+                };
+
+                Game.Systems.Vision.update(Game.world.playerEid);
+                addMessage('You travel to another part of the overworld.');
+            },
+
+            resetPlayerVision(radius) {
+                const oldV = Game.ECS.getComponent(Game.world.playerEid, 'vision');
+                const baseRadius = oldV ? (oldV.baseRadius || oldV.radius) : (radius || 8);
+                Game.ECS.addComponent(Game.world.playerEid, 'vision', {
+                    radius: radius || baseRadius,
+                    baseRadius: baseRadius,
+                    visible: new Set(),
+                    seen: new Set()
+                });
+            },
+
+            generateDungeonLevel(floor, keepPosition) {
+                Game.state.floor = floor;
+                Game.state.area = 'dungeon';
+                generateDungeon();
+
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                if (keepPosition) {
+                    p.x = Math.min(Math.max(p.x, 0), Game.config.DUNGEON_WIDTH - 1);
+                    p.y = Math.min(Math.max(p.y, 0), Game.config.DUNGEON_HEIGHT - 1);
+                    Game.world.dungeonGrid[p.y][p.x] = Tile.floor();
+                    connectPlayerToDungeon(p.x, p.y);
+                } else {
+                    const startRoom = Game.world.rooms[0];
+                    p.x = startRoom.centerX();
+                    p.y = startRoom.centerY();
+                }
+
+                placeUpStairsAt(p.x, p.y);
+                placeStairsFarthestFrom(p.x, p.y);
+                Game.Monsters.spawnAvoiding(p.x, p.y);
+                Game.Items.spawnAvoiding(p.x, p.y);
+            },
+
+            setPlayerArrival(arrivalMode) {
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                if (!p) return;
+
+                if (arrivalMode === 'downStairs' && Game.world.stairsPos && Number.isInteger(Game.world.stairsPos.x)) {
+                    p.x = Game.world.stairsPos.x;
+                    p.y = Game.world.stairsPos.y;
+                    return;
+                }
+
+                for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+                    for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                        if (arrivalMode === 'upStairs' && Game.world.dungeonGrid[y][x].glyph === '<') {
+                            p.x = x;
+                            p.y = y;
+                            return;
+                        }
+                    }
+                }
+            },
+
+            goToDungeonFloor(targetFloor, arrivalMode, message, keepPosition) {
+                this.saveCurrentDungeonLevel();
+                this.saveCurrentOverworldSection();
+                this.clearNonPlayerEntities();
+                Game.state.floor = targetFloor;
+                Game.state.area = 'dungeon';
+                Game.state.justDescended = true;
+
+                if (this.restoreDungeonLevel(targetFloor)) {
+                    this.setPlayerArrival(arrivalMode);
+                } else {
+                    this.generateDungeonLevel(targetFloor, !!keepPosition);
+                }
+
+                const oldVision = Game.ECS.getComponent(Game.world.playerEid, 'vision');
+                this.resetPlayerVision(oldVision ? oldVision.baseRadius : 2);
+                Game.Systems.Vision.update(Game.world.playerEid);
+                addMessage(message);
+            },
+
+            enterDungeon() {
+                Game.Events.emit('world.enterDungeon', {
+                    floor: Game.state.floor,
+                    playerId: Game.world.playerEid
+                });
+
+                Game.world.overworldTransition = null;
+                this.goToDungeonFloor(-1, 'upStairs', 'You enter the dungeon...');
+            },
+
+            exitDungeon(exitDirection) {
+                Game.Events.emit('world.exitDungeon', {
+                    floor: Game.state.floor,
+                    playerId: Game.world.playerEid
+                });
+
+                this.saveCurrentDungeonLevel();
+                this.clearNonPlayerEntities();
+                Game.state.floor = 0;
+                Game.state.area = 'overworld';
+                Game.state.justDescended = true;
+                Game.world.overworldTransition = null;
+
+                if (!Game.world.overworldGrid || Game.world.overworldGrid.length === 0) {
+                    generateOverworld();
+                } else {
+                    this.loadOverworldSection({x: 0, y: 0});
+                }
+
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                const entrance = Game.world.dungeonEntrancePos || {x: 12, y: 4};
+                const dir = exitDirection && (exitDirection.x !== 0 || exitDirection.y !== 0)
+                    ? exitDirection
+                    : {x: 0, y: 1};
+                const ret = {
+                    x: Math.min(Math.max(entrance.x + dir.x, 0), Game.config.DUNGEON_WIDTH - 1),
+                    y: Math.min(Math.max(entrance.y + dir.y, 0), Game.config.DUNGEON_HEIGHT - 1)
+                };
+                if (Game.world.dungeonGrid[ret.y][ret.x] && !Game.world.dungeonGrid[ret.y][ret.x].walkable) {
+                    Game.world.dungeonGrid[ret.y][ret.x] = Tile.grass();
+                    this.saveCurrentOverworldSection();
+                }
+                p.x = ret.x;
+                p.y = ret.y;
+
+                const oldVision = Game.ECS.getComponent(Game.world.playerEid, 'vision');
+                const overworldRadius = Math.max(8, oldVision ? oldVision.baseRadius : 8);
+                this.resetPlayerVision(overworldRadius);
+                Game.Systems.Vision.update(Game.world.playerEid);
+                addMessage('You climb back into the overworld.');
+            },
+
+            previousLevel(exitDirection) {
+                if (Game.state.floor === -1) {
+                    this.exitDungeon(exitDirection);
+                    return;
+                }
+
+                const targetFloor = Game.state.floor + 1;
+                this.goToDungeonFloor(targetFloor, 'downStairs', 'You climb up to floor ' + targetFloor + '...');
+            },
+
             nextLevel() {
                 Game.Events.emit('world.descendStart', {
                     floor: Game.state.floor,
                     playerId: Game.world.playerEid
                 });
 
-                Game.state.floor -= 1;
+                const targetFloor = Game.state.floor - 1;
                 Game.stats.floorsDescended++;
-                Game.state.justDescended = true;
 
-                const rem = [];
-                Game.ECS.getAllEntities().forEach(function(eid) { 
-                    if (eid !== Game.world.playerEid) rem.push(eid); 
-                });
-                for (let i = 0; i < rem.length; i++) Game.ECS.destroyEntity(rem[i]);
-
-                generateDungeon();
-
+                this.goToDungeonFloor(targetFloor, 'upStairs', 'You descend to floor ' + targetFloor + '...', true);
                 const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
-                p.x = Math.min(Math.max(p.x, 0), Game.config.DUNGEON_WIDTH - 1);
-                p.y = Math.min(Math.max(p.y, 0), Game.config.DUNGEON_HEIGHT - 1);
-                Game.world.dungeonGrid[p.y][p.x] = Tile.floor();
-
-                const oldV = Game.ECS.getComponent(Game.world.playerEid, 'vision');
-                Game.ECS.addComponent(Game.world.playerEid, 'vision', { 
-                    radius: oldV ? oldV.radius : 8, 
-                    baseRadius: oldV ? (oldV.baseRadius || oldV.radius) : 8, 
-                    visible: new Set(), 
-                    seen: new Set() 
-                });
-
-                connectPlayerToDungeon(p.x, p.y);
-                placeStairsFarthestFrom(p.x, p.y);
-
-                Game.Monsters.spawnAvoiding(p.x, p.y);
-                Game.Items.spawnAvoiding(p.x, p.y);
-
-                Game.Systems.Vision.update(Game.world.playerEid);
-                addMessage('You descend to floor ' + Game.state.floor + '...');
                 Game.Events.emit('world.descended', {
                     floor: Game.state.floor,
                     playerId: Game.world.playerEid,

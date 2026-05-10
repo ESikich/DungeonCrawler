@@ -187,7 +187,7 @@ Game.VisualEffects = (function() {
                 }
                 
                 const time = Date.now() * pulse.speed;
-                const pulseFactor = 0.7 + Math.sin(time + pulse.phase) * pulse.intensity;
+                const pulseFactor = 0.9 + Math.sin(time + pulse.phase) * pulse.intensity * 0.4;
                 
                 const pulsedColor = pulse.baseColor.map(c => 
                     Math.floor(Math.min(255, c * pulseFactor))
@@ -243,7 +243,7 @@ Game.VisualEffects = (function() {
                     
                     // Low health warning pulse - uses Date.now()
                     if (healthPercent < 0.3 && opts.animated) {
-                        const pulse = 0.5 + Math.sin(Date.now() * 0.008) * 0.5;
+                        const pulse = 0.75 + Math.sin(Date.now() * 0.004) * 0.25;
                         ctx.shadowColor = barColor;
                         ctx.shadowBlur = 3 * pulse;
                         ctx.fillRect(barX, barY, opts.width * healthPercent, opts.height);

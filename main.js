@@ -168,6 +168,7 @@ Game.Controller = (function() {
             Game.state.gameOver = false;
             Game.state.floor = 0;
             Game.state.justDescended = false;
+            Game.state.area = 'overworld';
             
             // Ensure explosions array is initialized
             Game.effects.explosions = [];
@@ -176,17 +177,12 @@ Game.Controller = (function() {
                 Game.stats.startTime = Date.now();
             }
 
-            generateDungeon();
-
-            const startRoom = Game.world.rooms[0];
-            Game.world.playerEid = createPlayer(startRoom.centerX(), startRoom.centerY());
+            const spawn = generateOverworld();
+            Game.world.playerEid = createPlayer(spawn.x, spawn.y);
 
             const p = ecs.getComponent(Game.world.playerEid, 'position');
-            connectPlayerToDungeon(p.x, p.y);
-            placeStairsFarthestFrom(p.x, p.y);
-
-            Game.Monsters.spawnAvoiding(p.x, p.y);
-            Game.Items.spawnAvoiding(p.x, p.y);
+            const vision = ecs.getComponent(Game.world.playerEid, 'vision');
+            vision.radius = 8;
 
             systems.Vision.update(Game.world.playerEid);
         },
@@ -356,7 +352,7 @@ function createPlayer(x, y, ecs = Game.ECS) {
     ecs.addComponent(eid, 'health', {hp: 100, maxHp: 100});
     ecs.addComponent(eid, 'stats', {strength: 14, agility: 12, accuracy: 6, evasion: 4});
     ecs.addComponent(eid, 'vision', {radius: 2, baseRadius: 2, visible: new Set(), seen: new Set()});
-    ecs.addComponent(eid, 'descriptor', {name: 'Hero', glyph: '@', color: 'yellow'});
+    ecs.addComponent(eid, 'descriptor', {name: 'Hero', glyph: '@', color: 'royalBlue'});
     ecs.addComponent(eid, 'blocker', {passable: false});
     ecs.addComponent(eid, 'progress', {xp: 0, level: 1, next: 20});
     ecs.addComponent(eid, 'inventory', {items: [], capacity: 12});

@@ -13,7 +13,8 @@ const browserScripts = [
     'visual-integration.js',
     'main.js',
     'shake-integration.js',
-    'crt-shader.js'
+    'crt-shader.js',
+    'tv-noise.js'
 ];
 
 const smokeScripts = [

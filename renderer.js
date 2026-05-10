@@ -27,6 +27,14 @@ Game.Renderer = (function() {
             default: return '#fff';
         }
     }
+
+    function getTileGlyphColor(tile) {
+        if (tile.glyph === '>' || tile.glyph === '<') return 'gold';
+        if (tile.special === 'tree') return 'rgb(0, 45, 20)';
+        if (tile.special === 'rock') return 'rgb(125, 80, 45)';
+        if (tile.special === 'bridge') return 'rgb(82, 48, 24)';
+        return 'white';
+    }
     
     // Public API
     return {
@@ -73,10 +81,14 @@ Game.Renderer = (function() {
 
             ctx.save();
             ctx.translate(shakeOffset.x, shakeOffset.y);
-            this.renderDungeon(world, playerEid);
-            this.renderEntities(playerEid);
-            this.renderExplosions(Game.effects.explosions);
-            this.renderLighting(playerEid);
+            if (world.overworldTransition) {
+                this.renderOverworldTransition(world, playerEid);
+            } else {
+                this.renderDungeon(world, playerEid);
+                this.renderEntities(playerEid);
+                this.renderExplosions(Game.effects.explosions);
+                this.renderLighting(playerEid);
+            }
             ctx.restore();
             
             // UI rendering (delegated to HUD module)
@@ -123,16 +135,51 @@ Game.Renderer = (function() {
             
             for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
                 for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
-                    this.renderTile(world.dungeonGrid[y][x], x, y, vision);
+                    this.renderTile(world.dungeonGrid[y][x], x, y, vision, 0, 0);
                 }
             }
         },
+
+        renderGrid(grid, vision, offsetX, offsetY) {
+            for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+                for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                    this.renderTile(grid[y][x], x, y, vision, offsetX, offsetY);
+                }
+            }
+        },
+
+        renderOverworldTransition(world, playerEid) {
+            const transition = world.overworldTransition;
+            const vision = Game.ECS.getComponent(playerEid, 'vision');
+            if (!transition || !vision) return;
+
+            const elapsed = Date.now() - transition.startTime;
+            const progress = Math.min(1, elapsed / transition.duration);
+            const eased = progress * progress * (3 - 2 * progress);
+            const width = Game.config.DUNGEON_PIXEL_WIDTH;
+            const height = Game.config.DUNGEON_PIXEL_HEIGHT;
+            const dx = transition.direction.x;
+            const dy = transition.direction.y;
+            const oldOffsetX = -dx * eased * width;
+            const oldOffsetY = -dy * eased * height;
+            const newOffsetX = dx * (1 - eased) * width;
+            const newOffsetY = dy * (1 - eased) * height;
+
+            this.renderGrid(transition.fromGrid, vision, oldOffsetX, oldOffsetY);
+            this.renderGrid(transition.toGrid, vision, newOffsetX, newOffsetY);
+            this.renderEntities(playerEid, {x: newOffsetX, y: newOffsetY});
+
+            if (progress >= 1) {
+                world.overworldTransition = null;
+            }
+        },
         
-        renderTile(tile, x, y, vision) {
-            const screenX = x * Game.config.TILE_SIZE;
-            const screenY = y * Game.config.TILE_SIZE;
-            const isVisible = vision.visible.has(`${x},${y}`);
-            const isSeen = vision.seen.has(`${x},${y}`);
+        renderTile(tile, x, y, vision, offsetX = 0, offsetY = 0) {
+            const screenX = x * Game.config.TILE_SIZE + offsetX;
+            const screenY = y * Game.config.TILE_SIZE + offsetY;
+            const isOverworld = Game.state.area === 'overworld';
+            const isVisible = isOverworld || vision.visible.has(`${x},${y}`);
+            const isSeen = isOverworld || vision.seen.has(`${x},${y}`);
             
             if (isVisible) {
                 // Fully visible
@@ -140,7 +187,7 @@ Game.Renderer = (function() {
                 ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
                 
                 if (tile.glyph && tile.glyph !== '.') {
-                    renderGlyph(tile.glyph, screenX, screenY, tile.glyph === '>' ? 'gold' : 'white');
+                    renderGlyph(tile.glyph, screenX, screenY, getTileGlyphColor(tile));
                 }
             } else if (isSeen) {
                 // Memory (dimmed)
@@ -155,7 +202,7 @@ Game.Renderer = (function() {
         },
         
         // Entity rendering
-        renderEntities(playerEid) {
+        renderEntities(playerEid, offset = {x: 0, y: 0}) {
             const vision = Game.ECS.getComponent(playerEid, 'vision');
             if (!vision) return;
             
@@ -165,13 +212,14 @@ Game.Renderer = (function() {
                 const pos = Game.ECS.getComponent(eid, 'position');
                 const desc = Game.ECS.getComponent(eid, 'descriptor');
                 const hp = Game.ECS.getComponent(eid, 'health');
+                const isOverworld = Game.state.area === 'overworld';
                 
                 // Skip dead entities or invisible ones
-                if ((hp && hp.hp <= 0) || !vision.visible.has(`${pos.x},${pos.y}`)) {
+                if ((hp && hp.hp <= 0) || (!isOverworld && !vision.visible.has(`${pos.x},${pos.y}`))) {
                     continue;
                 }
                 
-                this.renderEntity(eid, pos, desc, hp);
+                this.renderEntity(eid, pos, desc, hp, offset);
             }
             
             // Reset text alignment
@@ -179,11 +227,18 @@ Game.Renderer = (function() {
             ctx.textBaseline = 'top';
         },
         
-        renderEntity(eid, pos, desc, hp) {
-            const screenX = pos.x * Game.config.TILE_SIZE;
-            const screenY = pos.y * Game.config.TILE_SIZE;
-            const pulsedColor = Game.VisualEffects?.ColorPulse?.getColor(eid, desc.color) || desc.color;
+        renderEntity(eid, pos, desc, hp, offset = {x: 0, y: 0}) {
+            const screenX = pos.x * Game.config.TILE_SIZE + offset.x;
+            const screenY = pos.y * Game.config.TILE_SIZE + offset.y;
+            const pulsedColor = desc.glyph === '@'
+                ? desc.color
+                : (Game.VisualEffects?.ColorPulse?.getColor(eid, desc.color) || desc.color);
             const color = parseColor(pulsedColor);
+
+            if (desc.glyph === '@') {
+                ctx.fillStyle = 'rgb(0, 70, 32)';
+                ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
+            }
             
             // Render entity glyph
             ctx.font = `${Game.config.TILE_SIZE - 2}px monospace`;
@@ -232,6 +287,8 @@ Game.Renderer = (function() {
         
         // Lighting system with improved LOS edge visibility
         renderLighting(playerEid) {
+            if (Game.state.area === 'overworld') return;
+
             const pos = Game.ECS.getComponent(playerEid, 'position');
             const vision = Game.ECS.getComponent(playerEid, 'vision');
             if (!pos || !vision) return;

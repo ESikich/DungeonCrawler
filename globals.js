@@ -25,6 +25,7 @@ const Game = {
         playerGold: 0,
         playerAttackedThisTurn: false,
         justDescended: false,
+        area: 'overworld',
         speedActionCount: 0,
         goldMultiplier: 1,
         xpMultiplier: 1
@@ -33,17 +34,33 @@ const Game = {
     // --- World Data ---
     world: {
         dungeonGrid: [],
+        overworldGrid: [],
+        overworldSections: {},
+        overworldSection: { x: 0, y: 0 },
+        overworldTransition: null,
+        overworldSeed: 0,
+        dungeonLevels: {},
         rooms: [],
         playerEid: null,
         messages: [],
         stairsPos: { x: null, y: null },
+        dungeonEntrancePos: { x: null, y: null },
+        overworldReturnPos: { x: null, y: null },
 
         reset() {
             this.dungeonGrid = [];
+            this.overworldGrid = [];
+            this.overworldSections = {};
+            this.overworldSection = { x: 0, y: 0 };
+            this.overworldTransition = null;
+            this.overworldSeed = Math.floor(Math.random() * 1000000000);
+            this.dungeonLevels = {};
             this.rooms = [];
             this.playerEid = null;
             this.messages = [];
             this.stairsPos = { x: null, y: null };
+            this.dungeonEntrancePos = { x: null, y: null };
+            this.overworldReturnPos = { x: null, y: null };
         }
     },
 
@@ -170,6 +187,7 @@ const Game = {
         this.state.playerGold = 0;
         this.state.playerAttackedThisTurn = false;
         this.state.justDescended = false;
+        this.state.area = 'overworld';
         this.state.speedActionCount = 0;
         this.state.goldMultiplier = 1;
         this.state.xpMultiplier = 1;

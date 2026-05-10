@@ -72,24 +72,22 @@ body::before {
     0 0 10px var(--primary-glow),
     0 0 15px var(--primary-glow),
     0 0 20px var(--primary-glow);
-  animation: titlePulse 2s ease-in-out infinite alternate;
+  animation: titlePulse 4s ease-in-out infinite alternate;
   margin: 0;
 }
 
 @keyframes titlePulse {
   from {
     text-shadow:
-      0 0 5px var(--primary-glow),
-      0 0 10px var(--primary-glow),
-      0 0 15px var(--primary-glow),
-      0 0 20px var(--primary-glow);
+      0 0 3px var(--primary-glow),
+      0 0 7px var(--primary-glow),
+      0 0 10px var(--primary-glow);
   }
   to {
     text-shadow:
+      0 0 5px var(--primary-glow),
       0 0 10px var(--primary-glow),
-      0 0 20px var(--primary-glow),
-      0 0 30px var(--primary-glow),
-      0 0 40px var(--primary-glow);
+      0 0 15px var(--primary-glow);
   }
 }
 
@@ -141,7 +139,7 @@ body::before {
   z-index: 3;
 }
 
-@keyframes powerLED { from { opacity: 0.6; } to { opacity: 1; } }
+@keyframes powerLED { from { opacity: 0.75; } to { opacity: 0.9; } }
 
 /* FIXED: Game container preserves transforms */
 .game-container {
@@ -160,7 +158,7 @@ body::before {
   border-radius: 4px;
 }
 
-/* Scanlines overlay */
+/* Static scanlines overlay */
 .crt-screen::before {
   content: '';
   position: absolute;
@@ -174,12 +172,6 @@ body::before {
   );
   pointer-events: none;
   z-index: 10;
-  animation: scanlines 0.1s linear infinite;
-}
-
-@keyframes scanlines {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(4px); }
 }
 
 /* Curvature/edge shading overlay */
@@ -207,12 +199,12 @@ canvas {
 }
 
 canvas:not(.shaking) {
-  animation: crtFlicker 0.15s ease-in-out infinite alternate;
+  animation: crtFlicker 1.2s ease-in-out infinite alternate;
 }
 
 @keyframes crtFlicker {
-  from { filter: contrast(1.2) brightness(1.1) saturate(1.3); }
-  to   { filter: contrast(1.25) brightness(1.05) saturate(1.35); }
+  from { filter: contrast(1.04) brightness(1.04) saturate(1.12); }
+  to   { filter: contrast(1.08) brightness(1.02) saturate(1.16); }
 }
 
 .webgl-container { 
@@ -230,6 +222,19 @@ canvas:not(.shaking) {
   pointer-events: none;
   z-index: 5;
   transform-origin: center center;
+}
+
+#noiseCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0.18;
+  mix-blend-mode: normal;
+  image-rendering: pixelated;
+  filter: none;
+  animation: none;
 }
 
 .controls-grid {
