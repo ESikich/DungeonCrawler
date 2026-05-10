@@ -371,6 +371,17 @@ function createMonsterFromData(data, x, y, ecs = Game.ECS) {
             ecs.addComponent(eid, componentType, JSON.parse(JSON.stringify(componentData)));
         }
     }
+
+    Game.Events.emit('monster.created', {
+        entityId: eid,
+        position: {x, y},
+        descriptor: {
+            name: scaledData.name,
+            glyph: scaledData.glyph,
+            color: scaledData.color
+        },
+        behavior: scaledData.behavior || 'chase'
+    });
     
     return eid;
 }
@@ -435,7 +446,7 @@ function spawnMonstersModular(px, py, world = Game.world, ecs = Game.ECS, custom
                 monsterType = monsterPool.common[randInt(0, monsterPool.common.length - 1)];
             }
             
-            createMonsterFromData(monsterDataFor(monsterType), x, y, ecs);
+            Game.Monsters.createFromData(Game.Monsters.dataFor(monsterType), x, y, ecs);
         }
     }
 }
@@ -487,3 +498,15 @@ function processMonsterAI() {
         behavior.process(eid, ai, pos, ppos, desc);
     }
 }
+
+Game.Monsters = {
+    registry: MonsterRegistry,
+    behaviors: MonsterBehaviors,
+    helpers: MonsterHelpers,
+    register: registerMonster,
+    dataFor: monsterDataFor,
+    scaleForFloor: scaleMonsterForFloor,
+    createFromData: createMonsterFromData,
+    spawnAvoiding: spawnMonstersModular,
+    processAI: processMonsterAI
+};

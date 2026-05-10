@@ -3,156 +3,168 @@
  *  Sets up independent 60fps animation loop alongside turn-based game logic
  *  ========================= */
 
-// Start the visual effects animation loop when the game initializes
-if (Game.Controller) {
-    const originalInit = Game.Controller.init;
-    const originalStart = Game.Controller.start;
-    const originalStop = Game.Controller.stop;
-    const originalRender = Game.Controller.render;
-    
-    // Start visual effects when game initializes
-    Game.Controller.init = function(dependencies) {
-        const result = originalInit.call(this, dependencies);
-        Game.VisualEffects.start(); // Start independent animation loop
-        return result;
-    };
-    
-    // Ensure visual effects start with game
-    Game.Controller.start = function() {
-        originalStart.call(this);
+// Centralized visual reactions to gameplay events
+if (Game.Events) {
+    Game.Events.on('controller.init', function() {
         Game.VisualEffects.start();
-    };
-    
-    // Stop visual effects when game stops
-    Game.Controller.stop = function() {
-        originalStop.call(this);
+    });
+
+    Game.Events.on('controller.start', function() {
+        Game.VisualEffects.start();
+    });
+
+    Game.Events.on('controller.stop', function() {
         Game.VisualEffects.stop();
-    };
-    
-    // Render visual effects on top of game
-    Game.Controller.render = function() {
-        originalRender.call(this);
-        const ctx = Game.Renderer.getContext();
-        if (ctx) {
-            Game.VisualEffects.render(ctx);
-        }
-    };
-    
-    // Remove the update integration - visual effects update themselves
-    // Game turns only trigger new effects, don't update existing ones
-}
+    });
 
-// Enhance HUD rendering with visual effects for health bars
-if (Game.HUD && Game.HUD.render) {
-    const originalHUDRender = Game.HUD.render;
-    
-    Game.HUD.render = function(ctx, gameState, playerEid) {
-        originalHUDRender.call(this, ctx, gameState, playerEid);
-        
-        const components = this.gatherComponents(playerEid);
-        if (components.health) {
-            const canvasHeight = ctx.canvas.height;
-            const hudY = canvasHeight - this.getHeight();
-            
-            const hp = components.health;
-            const healthPercent = hp.hp / hp.maxHp;
-            
-            // Low health warning glow - positioned to match the actual health bar location
-            if (healthPercent < 0.3) {
-                const pulse = 0.3 + Math.sin(Date.now() * 0.008) * 0.7;
-                
-                // Calculate exact health bar position based on HUD layout
-                const CONFIG = {
-                    padding: 12,
-                    zones: {
-                        leftWidth: 200
-                    },
-                    bars: {
-                        width: 140,
-                        height: 12
-                    }
-                };
-                
-                const leftX = CONFIG.padding;
-                const barY = hudY + CONFIG.padding + 25; // Row 2 position
-                
-                ctx.save();
-                ctx.shadowColor = '#ff4444';
-                ctx.shadowBlur = 8 * pulse;
-                ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.8})`;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(leftX - 2, barY - 2, CONFIG.bars.width + 4, CONFIG.bars.height + 4);
-                ctx.restore();
+    Game.Events.on('combat.damage', function(event) {
+        if (!event.position) return;
+
+        if (event.isCritical) {
+            Game.VFX.critical(event.position.x, event.position.y, event.amount);
+            Game.VFX.shake(6, 200);
+        } else {
+            Game.VFX.damage(event.position.x, event.position.y, event.amount);
+            if (event.source !== 'bomb') {
+                Game.VFX.shake(3, 150);
             }
         }
-    };
-}
+    });
 
-// Enhanced monster spawning with visual effects
-if (typeof spawnMonstersModular === 'function') {
-    const originalSpawnMonsters = spawnMonstersModular;
-    
-    window.spawnMonstersModular = function(px, py, world, ecs, customMonsterPool) {
-        const result = originalSpawnMonsters.call(this, px, py, world, ecs, customMonsterPool);
-        
-        const monsters = ecs.getEntitiesWith(['ai', 'descriptor', 'position']);
-        
-        for (const monsterId of monsters) {
-            const desc = ecs.getComponent(monsterId, 'descriptor');
-            
-            if (monsterId === Game.world.playerEid) continue;
-            
-            if (desc) {
-                // Slow, subtle pulses for monsters - they should be atmospheric, not distracting
-                if (desc.name.toLowerCase().includes('berserker') || 
-                    desc.name.toLowerCase().includes('troll')) {
-                    Game.VFX.pulse(monsterId, 'red', 0.002, 0.15); // Very slow, subtle
-                } else if (desc.name.toLowerCase().includes('skeleton') ||
-                           desc.name.toLowerCase().includes('wraith')) {
-                    Game.VFX.pulse(monsterId, 'cyan', 0.0015, 0.1); // Very slow, very subtle
-                } else if (desc.glyph === 'g') {
-                    Game.VFX.pulse(monsterId, 'green', 0.001, 0.08); // Barely noticeable
-                }
-            }
+    Game.Events.on('player.death', function() {
+        Game.VFX.shake(12, 800);
+    });
+
+    Game.Events.on('progression.xpAwarded', function(event) {
+        if (event.position) {
+            Game.VFX.xp(event.position.x, event.position.y, event.amount);
         }
-        
-        return result;
-    };
-}
+    });
 
-// Add visual effects to level transitions
-if (Game.Systems && Game.Systems.World && Game.Systems.World.nextLevel) {
-    const originalNextLevel = Game.Systems.World.nextLevel;
-    
-    Game.Systems.World.nextLevel = function() {
+    Game.Events.on('player.healed', function(event) {
+        if (event.position && event.amount > 0) {
+            Game.VFX.heal(event.position.x, event.position.y, event.amount);
+        }
+
+        if (event.source === 'item') {
+            Game.VFX.pulse(event.entityId, 'green', 0.006, 0.4, 2000);
+        }
+    });
+
+    Game.Events.on('player.levelUp', function(event) {
+        Game.VFX.shake(4, 300);
+        Game.VFX.pulse(event.entityId, 'gold', 0.05, 0.6);
+        setTimeout(() => Game.VFX.stopPulse(event.entityId), 2000);
+    });
+
+    Game.Events.on('item.tempBoostApplied', function(event) {
+        const colors = {
+            speed: 'cyan',
+            strength: 'red',
+            light: 'yellow'
+        };
+        const speeds = {
+            speed: 0.008,
+            strength: 0.005,
+            light: 0.004
+        };
+        const intensities = {
+            speed: 0.5,
+            strength: 0.3,
+            light: 0.6
+        };
+        const color = colors[event.boostType] || 'white';
+
+        Game.VFX.pulse(
+            event.entityId,
+            color,
+            speeds[event.boostType] || 0.004,
+            intensities[event.boostType] || 0.4,
+            (event.turns || 1) * 5000
+        );
+    });
+
+    Game.Events.on('item.permanentBoostApplied', function(event) {
+        const colors = {
+            vision: 'blue',
+            health: 'green',
+            strength: 'red'
+        };
+        const shakes = {
+            vision: [3, 200],
+            health: [2, 150],
+            strength: [4, 250]
+        };
+        const color = colors[event.boostType] || 'gold';
+        const shake = shakes[event.boostType] || [3, 200];
+
+        if (event.boostType === 'health' && event.position && event.amount) {
+            Game.VFX.heal(event.position.x, event.position.y, event.amount);
+        }
+        Game.VFX.pulse(event.entityId, color, 0.003, event.boostType === 'vision' ? 0.7 : 0.5, 4000);
+        Game.VFX.shake(shake[0], shake[1]);
+    });
+
+    Game.Events.on('item.bombUsed', function(event) {
+        const radius = event.radius || 1;
+        Game.VFX.shake(8 + radius * 2, 400 + radius * 100);
+    });
+
+    Game.Events.on('item.goldPickedUp', function(event) {
+        if (event.position) {
+            Game.VFX.gold(event.position.x, event.position.y, event.amount);
+        }
+    });
+
+    Game.Events.on('item.pickedUp', function(event) {
+        if (event.rarity === 'epic') {
+            Game.VFX.shake(2, 100);
+        } else if (event.rarity === 'rare') {
+            Game.VFX.shake(1, 50);
+        }
+    });
+
+    Game.Events.on('item.created', function(event) {
+        const item = event.item || {};
+        if (event.rarity === 'epic') {
+            Game.VFX.pulse(event.entityId, item.color, 0.002, 0.3);
+        } else if (event.rarity === 'rare') {
+            Game.VFX.pulse(event.entityId, item.color, 0.0015, 0.2);
+        }
+    });
+
+    Game.Events.on('monster.created', function(event) {
+        const desc = event.descriptor;
+        if (!desc) return;
+
+        if (desc.name.toLowerCase().includes('berserker') ||
+            desc.name.toLowerCase().includes('troll')) {
+            Game.VFX.pulse(event.entityId, 'red', 0.002, 0.15);
+        } else if (desc.name.toLowerCase().includes('skeleton') ||
+                   desc.name.toLowerCase().includes('wraith')) {
+            Game.VFX.pulse(event.entityId, 'cyan', 0.0015, 0.1);
+        } else if (desc.glyph === 'g') {
+            Game.VFX.pulse(event.entityId, 'green', 0.001, 0.08);
+        }
+    });
+
+    Game.Events.on('world.descendStart', function() {
         Game.VFX.shake(6, 500);
-        
-        originalNextLevel.call(this);
-        
-        Game.VisualEffects.clear();
-        
-        const ppos = Game.ECS.getComponent(Game.world.playerEid, 'position');
-        if (ppos) {
-            // 3 second golden pulse for level transition
-            Game.VFX.pulse(Game.world.playerEid, 'yellow', 0.006, 0.4, 3000);
-        }
-    };
-}
+    });
 
-// Game reset enhancement
-if (Game.resetAll) {
-    const originalResetAll = Game.resetAll;
-    
-    Game.resetAll = function() {
+    Game.Events.on('world.descended', function(event) {
         Game.VisualEffects.clear();
-        
+        Game.VFX.pulse(event.playerId, 'yellow', 0.006, 0.4, 3000);
+    });
+
+    Game.Events.on('game.resetStart', function() {
+        Game.VisualEffects.clear();
+
         const canvas = Game.Renderer.getCanvas();
         if (canvas) {
             canvas.style.transform = 'translate(0px, 0px)';
         }
-        
-        originalResetAll.call(this);
-    };
+    });
 }
 
 // Initialize visual effects when game starts

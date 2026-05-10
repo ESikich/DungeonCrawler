@@ -50,6 +50,59 @@ const Game = {
         explosions: []
     },
 
+    // --- Gameplay Event Bus ---
+    events: {
+        appListeners: {},
+        sessionListeners: {},
+
+        on(type, handler, options) {
+            const scope = options && options.scope === 'session' ? 'session' : 'app';
+            const listeners = scope === 'session' ? this.sessionListeners : this.appListeners;
+
+            if (!listeners[type]) {
+                listeners[type] = [];
+            }
+            listeners[type].push(handler);
+            return () => this.off(type, handler, {scope});
+        },
+
+        off(type, handler, options) {
+            const scope = options && options.scope === 'session' ? 'session' : 'app';
+            const listeners = scope === 'session' ? this.sessionListeners : this.appListeners;
+            const handlers = listeners[type];
+            if (!handlers) return;
+            const index = handlers.indexOf(handler);
+            if (index !== -1) {
+                handlers.splice(index, 1);
+            }
+        },
+
+        emit(type, payload) {
+            const handlers = [
+                ...(this.appListeners[type] || []),
+                ...(this.sessionListeners[type] || [])
+            ];
+            if (handlers.length === 0) return;
+
+            handlers.forEach(function(handler) {
+                try {
+                    handler(payload || {});
+                } catch (error) {
+                    console.error('Game event handler failed:', type, error);
+                }
+            });
+        },
+
+        clearSession() {
+            this.sessionListeners = {};
+        },
+
+        clearAll() {
+            this.appListeners = {};
+            this.sessionListeners = {};
+        }
+    },
+
     // --- Game Statistics ---
     stats: {
         enemiesKilled: 0,
@@ -104,6 +157,8 @@ const Game = {
 
     // --- Full Game Reset ---
     resetAll() {
+        this.events.emit('game.resetStart');
+
         this.state.current = 'start';
         this.state.uiMode = 'game';
         this.state.invSelIndex = 0;
@@ -116,10 +171,15 @@ const Game = {
         this.state.speedActionCount = 0;
 
         this.effects.explosions = [];
+        this.events.clearSession();
         this.stats.reset();
         this.world.reset();
+        this.events.emit('game.resetComplete');
     }
 };
+
+// Event bus helper for systems that predate the Game namespace shape
+Game.Events = Game.events;
 
 // For backward compatibility during migration
 const TILE_SIZE = Game.config.TILE_SIZE;

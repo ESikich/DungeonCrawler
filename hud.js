@@ -211,6 +211,19 @@ Game.HUD = (function() {
             Zones.renderLeftZone(ctx, leftX, contentY, zones.leftWidth, components);
             Zones.renderCenterZone(ctx, centerX, contentY, zones.centerWidth, components, gameState);
             Zones.renderRightZone(ctx, rightX, contentY, zones.rightWidth, components, gameState);
+
+            if (components.health && components.health.hp / components.health.maxHp < 0.3) {
+                const pulse = 0.3 + Math.sin(Date.now() * 0.008) * 0.7;
+                const barY = contentY + CONFIG.zones.rowHeight;
+
+                ctx.save();
+                ctx.shadowColor = '#ff4444';
+                ctx.shadowBlur = 8 * pulse;
+                ctx.strokeStyle = `rgba(255, 68, 68, ${pulse * 0.8})`;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(leftX - 2, barY - 2, CONFIG.bars.width + 4, CONFIG.bars.height + 4);
+                ctx.restore();
+            }
             
             ctx.restore();
         },

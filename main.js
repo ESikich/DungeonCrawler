@@ -45,6 +45,7 @@ Game.Controller = (function() {
             inputHandler.setup();
             
             initialized = true;
+            Game.Events.emit('controller.init', {controller: this});
             return this;
         },
         
@@ -54,8 +55,8 @@ Game.Controller = (function() {
                 throw new Error('Game not initialized. Call init() first.');
             }
             
-            this.resetGame();
             this.startGameLoop();
+            Game.Events.emit('controller.start', {controller: this});
         },
         
         // Game loop
@@ -74,6 +75,7 @@ Game.Controller = (function() {
                 cancelAnimationFrame(gameLoop);
                 gameLoop = null;
             }
+            Game.Events.emit('controller.stop', {controller: this});
         },
         
         // Update game state
@@ -130,14 +132,14 @@ Game.Controller = (function() {
         },
         
         handleInventoryUse() {
-            if (useInventoryItem(Game.state.invSelIndex)) {
+            if (Game.Items.useInventoryItem(Game.state.invSelIndex)) {
                 Game.state.uiMode = 'game';
                 systems.TurnProcessor.process();
             }
         },
         
         handleInventoryDrop() {
-            if (dropInventoryItem(Game.state.invSelIndex)) {
+            if (Game.Items.dropInventoryItem(Game.state.invSelIndex)) {
                 Game.state.uiMode = 'game';
                 systems.TurnProcessor.process();
             }
@@ -183,8 +185,8 @@ Game.Controller = (function() {
             connectPlayerToDungeon(p.x, p.y);
             placeStairsFarthestFrom(p.x, p.y);
 
-            spawnMonstersAvoiding(p.x, p.y);
-            spawnItemsAvoiding(p.x, p.y);
+            Game.Monsters.spawnAvoiding(p.x, p.y);
+            Game.Items.spawnAvoiding(p.x, p.y);
 
             systems.Vision.update(Game.world.playerEid);
         },
@@ -364,12 +366,12 @@ function createPlayer(x, y, ecs = Game.ECS) {
 
 // UPDATED: Now uses the modular monster system
 function createMonster(type, x, y, ecs = Game.ECS) {
-    return createMonsterFromData(monsterDataFor(type), x, y, ecs);
+    return Game.Monsters.createFromData(Game.Monsters.dataFor(type), x, y, ecs);
 }
 
 // UPDATED: Now uses the new monster system
 function spawnMonstersAvoiding(px, py, world = Game.world, ecs = Game.ECS) {
-    spawnMonstersModular(px, py, world, ecs);
+    Game.Monsters.spawnAvoiding(px, py, world, ecs);
 }
 
 // Clean game initialization

@@ -21,6 +21,12 @@ function inBounds(x, y) {
  * Parse a color name into RGB array
  */
 function parseColor(name) {
+    if (Array.isArray(name)) return name;
+    const rgbMatch = typeof name === 'string' ? name.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/) : null;
+    if (rgbMatch) {
+        return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+    }
+
     const colors = {
         white: [255, 255, 255],
         black: [0, 0, 0],

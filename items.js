@@ -26,11 +26,22 @@ const ItemEffects = {
     // Healing effects
     heal(item, playerEid) {
         const hp = Game.ECS.getComponent(playerEid, 'health');
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
         if (!hp) return false;
         
         const before = hp.hp;
         hp.hp = clamp(hp.hp + (item.amount || 0), 0, hp.maxHp);
         const healed = hp.hp - before;
+
+        if (ppos && healed > 0) {
+            Game.Events.emit('player.healed', {
+                entityId: playerEid,
+                position: {x: ppos.x, y: ppos.y},
+                amount: healed,
+                source: 'item'
+            });
+        }
+
         addMessage('You quaff the potion (+' + healed + ' HP).');
         Game.stats.potionsUsed++;
         return true;
@@ -39,6 +50,7 @@ const ItemEffects = {
     // Temporary stat boosts
     tempBoost(item, playerEid) {
         const status = this.ensureStatus(playerEid);
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
         const turns = item.turns || 15;
         const bonus = item.bonus || 3;
         
@@ -46,6 +58,14 @@ const ItemEffects = {
             case 'speed':
                 status.speedBoost = turns;
                 addMessage('You feel much faster! (Extra action every other turn for ' + turns + ' turns)');
+                if (ppos) {
+                    Game.Events.emit('item.tempBoostApplied', {
+                        entityId: playerEid,
+                        position: {x: ppos.x, y: ppos.y},
+                        boostType: item.boostType,
+                        turns
+                    });
+                }
                 break;
             case 'strength':
                 const stats = Game.ECS.getComponent(playerEid, 'stats');
@@ -54,6 +74,14 @@ const ItemEffects = {
                     status.strengthBonusAmount = bonus;
                     stats.strength += bonus;
                     addMessage('You feel stronger! (+' + bonus + ' STR for ' + turns + ' turns)');
+                    if (ppos) {
+                        Game.Events.emit('item.tempBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType,
+                            turns
+                        });
+                    }
                 }
                 break;
             case 'light':
@@ -62,6 +90,14 @@ const ItemEffects = {
                     vision.radius = (vision.baseRadius || vision.radius) + bonus;
                     status.lightBoost = turns;
                     addMessage('A brilliant light surrounds you! (+' + bonus + ' vision for ' + turns + ' turns)');
+                    if (ppos) {
+                        Game.Events.emit('item.tempBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType,
+                            turns
+                        });
+                    }
                 }
                 break;
         }
@@ -79,6 +115,7 @@ const ItemEffects = {
     // Permanent upgrades
     permanentBoost(item, playerEid) {
         const bonus = item.bonus || 1;
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
         
         switch (item.boostType) {
             case 'vision':
@@ -87,6 +124,13 @@ const ItemEffects = {
                     vision.radius += bonus;
                     vision.baseRadius = vision.radius;
                     addMessage('Your vision expands permanently! (+' + bonus + ' vision radius)');
+                    if (ppos) {
+                        Game.Events.emit('item.permanentBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType
+                        });
+                    }
                     return true;
                 }
                 break;
@@ -96,6 +140,14 @@ const ItemEffects = {
                     hp.maxHp += bonus;
                     hp.hp += bonus;
                     addMessage('You feel more resilient! (+' + bonus + ' max HP)');
+                    if (ppos) {
+                        Game.Events.emit('item.permanentBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType,
+                            amount: bonus
+                        });
+                    }
                     return true;
                 }
                 break;
@@ -104,6 +156,13 @@ const ItemEffects = {
                 if (stats) {
                     stats.strength += bonus;
                     addMessage('You feel permanently stronger! (+' + bonus + ' STR)');
+                    if (ppos) {
+                        Game.Events.emit('item.permanentBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType
+                        });
+                    }
                     return true;
                 }
                 break;
@@ -122,6 +181,11 @@ const ItemEffects = {
         
         // Create explosion visual effect
         Game.Systems.Effects.createExplosion(ppos.x, ppos.y, rad);
+        Game.Events.emit('item.bombUsed', {
+            entityId: playerEid,
+            position: {x: ppos.x, y: ppos.y},
+            radius: rad
+        });
         
         for (let dy = -rad; dy <= rad; dy++) {
             for (let dx = -rad; dx <= rad; dx++) {
@@ -138,6 +202,14 @@ const ItemEffects = {
                         th.hp -= dmg; 
                         hit++;
                         Game.stats.totalDamageDealt += dmg;
+                        Game.Events.emit('combat.damage', {
+                            attackerId: playerEid,
+                            targetId: eid,
+                            position: {x: tx, y: ty},
+                            amount: dmg,
+                            isCritical: false,
+                            source: 'bomb'
+                        });
                         addMessage('The bomb hits ' + (td ? td.name : 'enemy') + ' for ' + dmg + '!');
                         if (th.hp <= 0) { 
                             addMessage((td ? td.name : 'enemy') + ' defeated!'); 
@@ -346,6 +418,14 @@ function createItemFromData(data, x, y) {
     addComponent(eid, 'item', JSON.parse(JSON.stringify(data)));
     addComponent(eid, 'descriptor', {name: data.name, glyph: data.glyph, color: data.color});
     addComponent(eid, 'blocker', {passable: true});
+
+    Game.Events.emit('item.created', {
+        entityId: eid,
+        position: {x, y},
+        item: data,
+        rarity: data.rarity || 'common'
+    });
+
     return eid;
 }
 
@@ -353,7 +433,7 @@ function createItemFromData(data, x, y) {
  * Create an item entity of the specified type
  */
 function createItem(type, x, y) {
-    return createItemFromData(itemDataFor(type), x, y);
+    return Game.Items.createFromData(Game.Items.dataFor(type), x, y);
 }
 
 /**
@@ -382,7 +462,7 @@ function spawnItemsAvoiding(px, py) {
                 itemType = epicItems[randInt(0, epicItems.length - 1)];
             }
             
-            createItem(itemType, x, y);
+            Game.Items.create(itemType, x, y);
         }
     }
 }
@@ -405,12 +485,12 @@ function dropLoot(victimId) {
             if (drop.type === 'gold') {
                 let amount = randInt(drop.amount[0], drop.amount[1]);
                 amount = Math.floor(amount * (1 + Math.abs(Game.state.floor) * 0.2));
-                const goldData = itemDataFor('gold');
+                const goldData = Game.Items.dataFor('gold');
                 goldData.amount = amount;
                 goldData.name = amount + ' Gold';
-                createItemFromData(goldData, pos.x, pos.y);
+                Game.Items.createFromData(goldData, pos.x, pos.y);
             } else {
-                createItem(drop.type, pos.x, pos.y);
+                Game.Items.create(drop.type, pos.x, pos.y);
             }
         }
     }
@@ -420,20 +500,27 @@ function dropLoot(victimId) {
  * Pick up all items at the specified position
  */
 function pickupItemsAt(x, y) {
-    const inv = getComponent(Game.world.playerEid, 'inventory');
+    const inv = Game.ECS.getComponent(Game.world.playerEid, 'inventory');
     if (!inv) return;
-    const here = getEntitiesAt(x, y);
+    const here = Game.ECS.getEntitiesAt(x, y);
     for (let i = 0; i < here.length; i++) {
         const eid = here[i];
         if (eid === Game.world.playerEid) continue;
-        const item = getComponent(eid, 'item');
+        const item = Game.ECS.getComponent(eid, 'item');
         if (item) {
             if (item.effect === 'gold') {
                 const amount = item.amount || 1;
                 Game.state.playerGold += amount;
                 Game.stats.goldCollected += amount;
+
+                Game.Events.emit('item.goldPickedUp', {
+                    entityId: eid,
+                    position: {x, y},
+                    amount
+                });
+
                 addMessage('Picked up ' + amount + ' gold! (Total: ' + Game.state.playerGold + ')');
-                destroyEntity(eid);
+                Game.ECS.destroyEntity(eid);
             } else {
                 if (inv.items.length >= inv.capacity) { 
                     addMessage('Inventory full!'); 
@@ -443,7 +530,15 @@ function pickupItemsAt(x, y) {
                 const name = item.name || 'item';
                 const rarity = item.rarity || 'common';
                 const color = rarity === 'epic' ? 'Epic ' : rarity === 'rare' ? 'Rare ' : '';
-                destroyEntity(eid);
+
+                Game.Events.emit('item.pickedUp', {
+                    entityId: eid,
+                    position: {x, y},
+                    item,
+                    rarity
+                });
+
+                Game.ECS.destroyEntity(eid);
                 addMessage('Picked up ' + color + name + '.');
                 Game.stats.itemsPickedUp++;
             }
@@ -484,9 +579,24 @@ function dropInventoryItem(index) {
     const ppos = getComponent(Game.world.playerEid, 'position');
     if (!inv || !ppos || index < 0 || index >= inv.items.length) return false;
     const data = inv.items[index];
-    createItemFromData(data, ppos.x, ppos.y);
+    Game.Items.createFromData(data, ppos.x, ppos.y);
     addMessage('Dropped ' + (data.name || 'item') + '.');
     inv.items.splice(index, 1);
     Game.stats.itemsDropped++;
     return true;
 }
+
+Game.Items = {
+    registry: ItemRegistry,
+    effects: ItemEffects,
+    helpers: ItemHelpers,
+    register: registerItem,
+    dataFor: itemDataFor,
+    createFromData: createItemFromData,
+    create: createItem,
+    spawnAvoiding: spawnItemsAvoiding,
+    dropLoot,
+    pickupAt: pickupItemsAt,
+    useInventoryItem,
+    dropInventoryItem
+};

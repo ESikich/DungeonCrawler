@@ -69,15 +69,23 @@ Game.Renderer = (function() {
         
         // Render game view
         renderGameView(gameState, world, playerEid) {
-            // Core game rendering
+            const shakeOffset = Game.VisualEffects ? Game.VisualEffects.DungeonShake.getOffset() : {x: 0, y: 0};
+
+            ctx.save();
+            ctx.translate(shakeOffset.x, shakeOffset.y);
             this.renderDungeon(world, playerEid);
             this.renderEntities(playerEid);
             this.renderExplosions(Game.effects.explosions);
             this.renderLighting(playerEid);
+            ctx.restore();
             
             // UI rendering (delegated to HUD module)
             Game.HUD.render(ctx, gameState, playerEid);
             Game.HUD.renderMessages(ctx, world.messages);
+
+            if (Game.VisualEffects) {
+                Game.VisualEffects.render(ctx);
+            }
             
             // Overlays
             if (gameState.uiMode === 'inventory') {
@@ -174,7 +182,8 @@ Game.Renderer = (function() {
         renderEntity(eid, pos, desc, hp) {
             const screenX = pos.x * Game.config.TILE_SIZE;
             const screenY = pos.y * Game.config.TILE_SIZE;
-            const color = parseColor(desc.color);
+            const pulsedColor = Game.VisualEffects?.ColorPulse?.getColor(eid, desc.color) || desc.color;
+            const color = parseColor(pulsedColor);
             
             // Render entity glyph
             ctx.font = `${Game.config.TILE_SIZE - 2}px monospace`;
@@ -185,7 +194,14 @@ Game.Renderer = (function() {
             
             // Health bar for damaged non-player entities
             if (hp && hp.hp < hp.maxHp && desc.glyph !== '@') {
-                this.renderEntityHealthBar(screenX, screenY, hp);
+                if (Game.VisualEffects?.HealthBars?.renderEntityHealthBar) {
+                    Game.VisualEffects.HealthBars.renderEntityHealthBar(ctx, screenX, screenY, hp, {
+                        animated: true,
+                        offsetY: -6
+                    });
+                } else {
+                    this.renderEntityHealthBar(screenX, screenY, hp);
+                }
             }
         },
         

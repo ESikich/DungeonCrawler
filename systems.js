@@ -45,49 +45,66 @@ Game.Systems = (function() {
                 pos.y = toY;
 
                 if (eid === Game.world.playerEid) { 
-                    pickupItemsAt(toX, toY);
+                    Game.Items.pickupAt(toX, toY);
                     const t = Game.world.dungeonGrid[toY][toX];
                     if (t && t.glyph === '>') Game.Systems.World.nextLevel();
                 }
             }
         },
         
-        // Combat System - FIXED DEATH ATTRIBUTION
+        // Combat System
         Combat: {
             handleAttack(attackerId, targetId) {
                 const as = Game.ECS.getComponent(attackerId, 'stats');
                 const th = Game.ECS.getComponent(targetId, 'health');
                 const td = Game.ECS.getComponent(targetId, 'descriptor');
-                const ad = Game.ECS.getComponent(attackerId, 'descriptor'); // ADDED: Get attacker descriptor
-                if (!as || !th) return;
+                const ad = Game.ECS.getComponent(attackerId, 'descriptor');
+                const tpos = Game.ECS.getComponent(targetId, 'position');
+                if (!as || !th || !tpos) return;
 
                 const dmg = randInt(3, 8) + Math.floor(as.strength / 3);
-                th.hp -= dmg;
+                const isCritical = Math.random() < 0.1;
+                const finalDamage = isCritical ? Math.floor(dmg * 1.5) : dmg;
+
+                th.hp -= finalDamage;
+
+                Game.Events.emit('combat.damage', {
+                    attackerId,
+                    targetId,
+                    position: {x: tpos.x, y: tpos.y},
+                    amount: finalDamage,
+                    isCritical
+                });
 
                 // Track stats
                 if (attackerId === Game.world.playerEid) {
                     Game.state.playerAttackedThisTurn = true;
-                    Game.stats.totalDamageDealt += dmg;
+                    Game.stats.totalDamageDealt += finalDamage;
                     Game.stats.timesAttacked++;
                 } else if (targetId === Game.world.playerEid) {
-                    Game.stats.totalDamageTaken += dmg;
+                    Game.stats.totalDamageTaken += finalDamage;
                 }
 
                 const targetName = td ? td.name : 'enemy';
-                const attackerName = ad ? ad.name : 'attacker'; // ADDED: Get attacker name
-                addMessage('Dealt ' + dmg + ' damage to ' + targetName + '!');
+                const attackerName = ad ? ad.name : 'attacker';
+                const critText = isCritical ? ' CRITICAL!' : '';
+                addMessage(`Dealt ${finalDamage} damage to ${targetName}!${critText}`);
 
                 if (th.hp <= 0) {
                     addMessage(targetName + ' defeated!');
                     
                     if (targetId === Game.world.playerEid) {
-                        // FIXED: Use attackerName instead of targetName
                         Game.stats.deathCause = 'Combat';
-                        Game.stats.killedBy = attackerName; // This was the bug - was using targetName (Hero)
+                        Game.stats.killedBy = attackerName;
                         Game.stats.endTime = Date.now();
                         Game.state.gameOver = true;
                         Game.state.current = 'gameOver';
                         addMessage('You have died! Press R to restart.');
+                        Game.Events.emit('player.death', {
+                            attackerId,
+                            attackerName,
+                            targetId
+                        });
                     } else {
                         this.onKill(targetId, attackerId);
                     }
@@ -95,7 +112,9 @@ Game.Systems = (function() {
             },
             
             onKill(victimId, killerId) {
-                dropLoot(victimId);
+                const vpos = Game.ECS.getComponent(victimId, 'position');
+
+                Game.Items.dropLoot(victimId);
                 
                 if (killerId !== Game.world.playerEid) { 
                     Game.ECS.destroyEntity(victimId); 
@@ -106,6 +125,13 @@ Game.Systems = (function() {
                 
                 const xv = Game.ECS.getComponent(victimId, 'xpValue');
                 if (xv && typeof xv.xp === 'number') { 
+                    if (vpos) {
+                        Game.Events.emit('progression.xpAwarded', {
+                            entityId: victimId,
+                            position: {x: vpos.x, y: vpos.y},
+                            amount: xv.xp
+                        });
+                    }
                     Game.Systems.Progression.gainXP(xv.xp); 
                 }
                 Game.ECS.destroyEntity(victimId);
@@ -273,10 +299,13 @@ Game.Systems = (function() {
         Progression: {
             gainXP(amount) {
                 const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+                const ppos = Game.ECS.getComponent(Game.world.playerEid, 'position');
                 if (!prog) return;
+
                 prog.xp += Math.max(0, amount | 0);
                 Game.stats.totalXpGained += Math.max(0, amount | 0);
                 addMessage('Gained ' + amount + ' XP.');
+
                 while (prog.xp >= prog.next) {
                     prog.xp -= prog.next;
                     prog.level += 1;
@@ -284,11 +313,29 @@ Game.Systems = (function() {
 
                     const hp = Game.ECS.getComponent(Game.world.playerEid, 'health');
                     const st = Game.ECS.getComponent(Game.world.playerEid, 'stats');
-                    if (hp) { hp.maxHp += 10; hp.hp = hp.maxHp; }
+                    if (hp) {
+                        const oldHp = hp.hp;
+                        hp.maxHp += 10;
+                        hp.hp = hp.maxHp;
+
+                        if (ppos) {
+                            Game.Events.emit('player.healed', {
+                                entityId: Game.world.playerEid,
+                                position: {x: ppos.x, y: ppos.y},
+                                amount: hp.hp - oldHp,
+                                source: 'levelUp'
+                            });
+                        }
+                    }
                     if (st) { st.strength += 1; st.accuracy += 1; if (prog.level % 2 === 0) st.agility += 1; }
                     addMessage('You are now level ' + prog.level + '! (+stats, HP restored)');
                     
                     Game.stats.highestLevel = Math.max(Game.stats.highestLevel, prog.level);
+                    Game.Events.emit('player.levelUp', {
+                        entityId: Game.world.playerEid,
+                        position: ppos ? {x: ppos.x, y: ppos.y} : null,
+                        level: prog.level
+                    });
                 }
             }
         },
@@ -328,6 +375,11 @@ Game.Systems = (function() {
         // World Management System
         World: {
             nextLevel() {
+                Game.Events.emit('world.descendStart', {
+                    floor: Game.state.floor,
+                    playerId: Game.world.playerEid
+                });
+
                 Game.state.floor -= 1;
                 Game.stats.floorsDescended++;
                 Game.state.justDescended = true;
@@ -356,11 +408,16 @@ Game.Systems = (function() {
                 connectPlayerToDungeon(p.x, p.y);
                 placeStairsFarthestFrom(p.x, p.y);
 
-                spawnMonstersAvoiding(p.x, p.y);
-                spawnItemsAvoiding(p.x, p.y);
+                Game.Monsters.spawnAvoiding(p.x, p.y);
+                Game.Items.spawnAvoiding(p.x, p.y);
 
                 Game.Systems.Vision.update(Game.world.playerEid);
                 addMessage('You descend to floor ' + Game.state.floor + '...');
+                Game.Events.emit('world.descended', {
+                    floor: Game.state.floor,
+                    playerId: Game.world.playerEid,
+                    position: {x: p.x, y: p.y}
+                });
             }
         },
         
@@ -416,7 +473,7 @@ Game.Systems = (function() {
                         Game.state.speedActionCount = 0; // Reset counter
                         
                         // Now process AI and enemies
-                        Game.Systems.AI.process();
+                        Game.Monsters.processAI();
                         Game.Systems.Movement.process();
                         
                         // Update vision again after AI movement
@@ -442,7 +499,7 @@ Game.Systems = (function() {
                     // No speed boost - normal turn processing
                     Game.state.speedActionCount = 0; // Reset counter when not speedy
                     
-                    Game.Systems.AI.process();
+                    Game.Monsters.processAI();
                     Game.Systems.Movement.process();
 
                     // Update vision for all entities
