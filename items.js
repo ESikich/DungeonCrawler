@@ -9,8 +9,11 @@
  *     registerItem('superHeal', ItemHelpers.healingPotion('Super Potion', 75, 'gold', 'epic'));
  *     
  *     // Temporary boosts
- *     registerItem('ultraSpeed', ItemHelpers.tempBoostItem('Ultra Speed', 'speed', 5, 20, '!', 'white', 'epic'));
- *     registerItem('might', ItemHelpers.tempBoostItem('Scroll of Might', 'strength', 8, 15, '?', 'red', 'rare'));
+ *     registerItem('ultraSpeed', ItemHelpers.definePotion({
+ *         name: 'Ultra Speed', color: 'white', rarity: 'epic',
+ *         desc: 'Move faster for 20 turns.', effect: 'tempBoost',
+ *         boostType: 'speed', bonus: 5, turns: 20
+ *     }));
  *     
  *     // Permanent upgrades  
  *     registerItem('heartStone', ItemHelpers.permanentUpgrade('Heart Stone', 'health', 25, '♥', 'pink', 'epic'));
@@ -51,6 +54,8 @@ const ItemEffects = {
     tempBoost(item, playerEid) {
         const status = this.ensureStatus(playerEid);
         const ppos = Game.ECS.getComponent(playerEid, 'position');
+        const stats = Game.ECS.getComponent(playerEid, 'stats');
+        const hp = Game.ECS.getComponent(playerEid, 'health');
         const turns = item.turns || 15;
         const bonus = item.bonus || 3;
         
@@ -68,7 +73,6 @@ const ItemEffects = {
                 }
                 break;
             case 'strength':
-                const stats = Game.ECS.getComponent(playerEid, 'stats');
                 if (stats) {
                     status.strengthBoost = turns;
                     status.strengthBonusAmount = bonus;
@@ -82,6 +86,72 @@ const ItemEffects = {
                             turns
                         });
                     }
+                }
+                break;
+            case 'accuracy':
+                if (stats) {
+                    status.accuracyBoost = turns;
+                    status.accuracyBonusAmount = bonus;
+                    stats.accuracy += bonus;
+                    addMessage('Your focus sharpens! (+' + bonus + ' ACC for ' + turns + ' turns)');
+                    this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                }
+                break;
+            case 'evasion':
+                if (stats) {
+                    const agilityBonus = item.agilityBonus || 0;
+                    status.evasionBoost = turns;
+                    status.evasionBonusAmount = bonus;
+                    status.agilityBonusAmount = agilityBonus;
+                    stats.evasion += bonus;
+                    stats.agility += agilityBonus;
+                    addMessage('You move with sudden grace! (+' + bonus + ' EVA for ' + turns + ' turns)');
+                    this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                }
+                break;
+            case 'clarity':
+                if (stats) {
+                    status.clarityBoost = turns;
+                    status.clarityAccuracyAmount = item.accuracyBonus || bonus;
+                    status.clarityEvasionAmount = item.evasionBonus || bonus;
+                    stats.accuracy += status.clarityAccuracyAmount;
+                    stats.evasion += status.clarityEvasionAmount;
+                    addMessage('Your senses clear! (+' + status.clarityAccuracyAmount + ' ACC, +' + status.clarityEvasionAmount + ' EVA for ' + turns + ' turns)');
+                    this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                }
+                break;
+            case 'damageReduction':
+                status.damageReductionBoost = turns;
+                status.damageReductionPercent = item.reduction || 0.35;
+                addMessage('Your skin hardens like iron! (damage reduced for ' + turns + ' turns)');
+                this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                break;
+            case 'regen':
+                status.regenBoost = turns;
+                status.regenAmount = item.regenAmount || bonus;
+                addMessage('Mending warmth spreads through you. (healing over ' + turns + ' turns)');
+                this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                break;
+            case 'maxHealth':
+                if (hp) {
+                    status.tempMaxHpBoost = turns;
+                    status.tempMaxHpAmount = bonus;
+                    hp.maxHp += bonus;
+                    hp.hp += bonus;
+                    addMessage('A guardian force bolsters you! (+' + bonus + ' max HP for ' + turns + ' turns)');
+                    this.emitTempBoost(playerEid, ppos, item.boostType, turns);
+                }
+                break;
+            case 'glassFury':
+                if (stats) {
+                    const evasionPenalty = item.evasionPenalty || 0;
+                    status.glassFuryBoost = turns;
+                    status.glassFuryStrengthAmount = bonus;
+                    status.glassFuryEvasionPenalty = evasionPenalty;
+                    stats.strength += bonus;
+                    stats.evasion -= evasionPenalty;
+                    addMessage('Fury floods your limbs! (+' + bonus + ' STR, -' + evasionPenalty + ' EVA for ' + turns + ' turns)');
+                    this.emitTempBoost(playerEid, ppos, item.boostType, turns);
                 }
                 break;
             case 'light':
@@ -110,6 +180,24 @@ const ItemEffects = {
         }
         
         return true;
+    },
+
+    utility(item, playerEid) {
+        switch (item.utilityType) {
+            case 'mapping':
+                return this.mapFloor(playerEid);
+            case 'detection':
+                return this.detectNearby(playerEid, item.radius || 8);
+            case 'blink':
+                return this.blink(playerEid, item.radius || 6);
+            case 'silence':
+                return this.silenceNearby(playerEid, item.radius || 5, item.turns || 8);
+            case 'warding':
+                return this.wardPlayer(playerEid, item.radius || 1, item.turns || 5);
+            case 'antidote':
+                return this.cleanse(playerEid);
+        }
+        return false;
     },
 
     // Permanent upgrades
@@ -166,6 +254,44 @@ const ItemEffects = {
                     return true;
                 }
                 break;
+            case 'agility':
+                const agilityStats = Game.ECS.getComponent(playerEid, 'stats');
+                if (agilityStats) {
+                    agilityStats.agility += bonus;
+                    agilityStats.evasion += bonus;
+                    addMessage('You feel permanently lighter on your feet! (+' + bonus + ' AGI/EVA)');
+                    if (ppos) {
+                        Game.Events.emit('item.permanentBoostApplied', {
+                            entityId: playerEid,
+                            position: {x: ppos.x, y: ppos.y},
+                            boostType: item.boostType
+                        });
+                    }
+                    return true;
+                }
+                break;
+            case 'goldBonus':
+                Game.state.goldMultiplier = (Game.state.goldMultiplier || 1) + bonus;
+                addMessage('Gold glints brighter in your eyes. (bonus gold from pickups)');
+                if (ppos) {
+                    Game.Events.emit('item.permanentBoostApplied', {
+                        entityId: playerEid,
+                        position: {x: ppos.x, y: ppos.y},
+                        boostType: item.boostType
+                    });
+                }
+                return true;
+            case 'xpBonus':
+                Game.state.xpMultiplier = (Game.state.xpMultiplier || 1) + bonus;
+                addMessage('Old lessons settle into your bones. (bonus XP gained)');
+                if (ppos) {
+                    Game.Events.emit('item.permanentBoostApplied', {
+                        entityId: playerEid,
+                        position: {x: ppos.x, y: ppos.y},
+                        boostType: item.boostType
+                    });
+                }
+                return true;
         }
         return false;
     },
@@ -235,153 +361,533 @@ const ItemEffects = {
         return false;
     },
 
+    emitTempBoost(playerEid, ppos, boostType, turns) {
+        if (!ppos) return;
+        Game.Events.emit('item.tempBoostApplied', {
+            entityId: playerEid,
+            position: {x: ppos.x, y: ppos.y},
+            boostType,
+            turns
+        });
+    },
+
+    mapFloor(playerEid) {
+        const vision = Game.ECS.getComponent(playerEid, 'vision');
+        if (!vision) return false;
+
+        for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+            for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                if (Game.world.dungeonGrid[y][x].walkable) {
+                    vision.seen.add(x + ',' + y);
+                }
+            }
+        }
+        addMessage('The floor etches itself into your memory.');
+        Game.stats.scrollsUsed++;
+        return true;
+    },
+
+    detectNearby(playerEid, radius) {
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
+        if (!ppos) return false;
+
+        let monsterCount = 0;
+        let itemCount = 0;
+        const entities = Game.ECS.getEntitiesWith(['position']);
+        for (const eid of entities) {
+            if (eid === playerEid) continue;
+            const pos = Game.ECS.getComponent(eid, 'position');
+            const dist = Math.abs(pos.x - ppos.x) + Math.abs(pos.y - ppos.y);
+            if (dist > radius) continue;
+            if (Game.ECS.getComponent(eid, 'health')) monsterCount++;
+            if (Game.ECS.getComponent(eid, 'item')) itemCount++;
+        }
+        addMessage('You sense ' + monsterCount + ' foes and ' + itemCount + ' items nearby.');
+        Game.stats.scrollsUsed++;
+        return true;
+    },
+
+    blink(playerEid, radius) {
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
+        if (!ppos) return false;
+
+        const candidates = [];
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const x = ppos.x + dx;
+                const y = ppos.y + dy;
+                if (!inBounds(x, y) || !Game.world.dungeonGrid[y][x].walkable) continue;
+                if (Game.ECS.getEntitiesAt(x, y).some(eid => {
+                    const blocker = Game.ECS.getComponent(eid, 'blocker');
+                    return blocker && !blocker.passable;
+                })) continue;
+                candidates.push({x, y});
+            }
+        }
+
+        if (candidates.length === 0) {
+            addMessage('The blink magic sputters out.');
+            return false;
+        }
+
+        const target = candidates[randInt(0, candidates.length - 1)];
+        ppos.x = target.x;
+        ppos.y = target.y;
+        Game.Systems.Vision.update(playerEid);
+        addMessage('Space folds around you.');
+        Game.stats.scrollsUsed++;
+        return true;
+    },
+
+    silenceNearby(playerEid, radius, turns) {
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
+        if (!ppos) return false;
+
+        let silenced = 0;
+        const aiList = Game.ECS.getEntitiesWith(['ai', 'position']);
+        for (const eid of aiList) {
+            const pos = Game.ECS.getComponent(eid, 'position');
+            const dist = Math.abs(pos.x - ppos.x) + Math.abs(pos.y - ppos.y);
+            if (dist <= radius) {
+                const ai = Game.ECS.getComponent(eid, 'ai');
+                ai.active = false;
+                ai.silenced = turns;
+                silenced++;
+            }
+        }
+        addMessage('A hush falls over ' + silenced + ' nearby foes.');
+        Game.stats.scrollsUsed++;
+        return true;
+    },
+
+    wardPlayer(playerEid, radius, turns) {
+        const status = this.ensureStatus(playerEid);
+        const ppos = Game.ECS.getComponent(playerEid, 'position');
+        if (!ppos) return false;
+
+        status.wardingBoost = turns;
+        const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
+        let pushed = 0;
+        for (const dir of dirs) {
+            const x = ppos.x + dir[0];
+            const y = ppos.y + dir[1];
+            const tx = ppos.x + dir[0] * (radius + 1);
+            const ty = ppos.y + dir[1] * (radius + 1);
+            if (!inBounds(x, y) || !inBounds(tx, ty) || !Game.world.dungeonGrid[ty][tx].walkable) continue;
+            const ents = Game.ECS.getEntitiesAt(x, y);
+            for (const eid of ents) {
+                if (eid === playerEid || !Game.ECS.getComponent(eid, 'health')) continue;
+                const pos = Game.ECS.getComponent(eid, 'position');
+                pos.x = tx;
+                pos.y = ty;
+                pushed++;
+            }
+        }
+        addMessage('A warding pulse pushes back ' + pushed + ' foes.');
+        Game.stats.scrollsUsed++;
+        return true;
+    },
+
+    cleanse(playerEid) {
+        const status = this.ensureStatus(playerEid);
+        status.poisoned = 0;
+        status.bleeding = 0;
+        status.silenced = 0;
+        addMessage('You feel cleansed.');
+        Game.stats.potionsUsed++;
+        return true;
+    },
+
     // Helper to ensure status component exists
     ensureStatus(playerEid) {
         let status = Game.ECS.getComponent(playerEid, 'status');
         if (!status) {
-            status = {lightBoost: 0, speedBoost: 0, strengthBoost: 0};
+            status = {
+                lightBoost: 0,
+                speedBoost: 0,
+                strengthBoost: 0,
+                accuracyBoost: 0,
+                evasionBoost: 0,
+                clarityBoost: 0,
+                damageReductionBoost: 0,
+                regenBoost: 0,
+                tempMaxHpBoost: 0,
+                glassFuryBoost: 0,
+                wardingBoost: 0
+            };
             Game.ECS.addComponent(playerEid, 'status', status);
         }
         return status;
     }
 };
 
-// Item Registry - Add new items here!
-const ItemRegistry = {
-    // === POTIONS ===
-    'potion': {
-        kind: 'potion', name: 'Healing Potion', glyph: '!', color: 'purple', rarity: 'common',
-        desc: 'Restore 25 HP.',
-        effect: 'heal', amount: 25
-    },
-    
-    'speed': {
-        kind: 'potion', name: 'Speed Potion', glyph: '!', color: 'cyan', rarity: 'rare',
-        desc: 'Move faster - enemies act less frequently for 15 turns.',  // Updated description
-        effect: 'tempBoost', boostType: 'speed', bonus: 3, turns: 15
-    },
-    
-    'strength': {
-        kind: 'elixir', name: 'Strength Elixir', glyph: '!', color: 'orange', rarity: 'rare',
-        desc: '+5 STR for 20 turns.',
-        effect: 'tempBoost', boostType: 'strength', bonus: 5, turns: 20
-    },
-
-    'megaHeal': {
-        kind: 'potion', name: 'Greater Healing Potion', glyph: '!', color: 'red', rarity: 'rare',
-        desc: 'Restore 50 HP.',
-        effect: 'heal', amount: 50
-    },
-
-    'vitality': {
-        kind: 'elixir', name: 'Elixir of Vitality', glyph: '!', color: 'green', rarity: 'epic',
-        desc: 'Permanently increases max HP by 15.',
-        effect: 'permanentBoost', boostType: 'health', bonus: 15
-    },
-
-    // === SCROLLS ===
-    'scroll': {
-        kind: 'scroll', name: 'Scroll of Light', glyph: '?', color: 'yellow', rarity: 'common',
-        desc: 'Boost vision radius temporarily.',
-        effect: 'tempBoost', boostType: 'light', bonus: 3, turns: 20
-    },
-
-    'scrollGreaterLight': {
-        kind: 'scroll', name: 'Scroll of Greater Light', glyph: '?', color: 'gold', rarity: 'rare',
-        desc: 'Greatly boost vision radius temporarily.',
-        effect: 'tempBoost', boostType: 'light', bonus: 5, turns: 25
-    },
-
-    'scrollHaste': {
-        kind: 'scroll', name: 'Scroll of Haste', glyph: '?', color: 'cyan', rarity: 'rare',
-        desc: 'Move much faster for 10 turns.',
-        effect: 'tempBoost', boostType: 'speed', bonus: 3, turns: 10
-    },
-
-    // === PERMANENT UPGRADES ===
-    'vision': {
-        kind: 'orb', name: 'Vision Orb', glyph: 'o', color: 'blue', rarity: 'epic',
-        desc: 'Permanently increases vision by 1.',
-        effect: 'permanentBoost', boostType: 'vision', bonus: 1
-    },
-
-    'powerStone': {
-        kind: 'stone', name: 'Power Stone', glyph: '*', color: 'red', rarity: 'epic',
-        desc: 'Permanently increases strength by 2.',
-        effect: 'permanentBoost', boostType: 'strength', bonus: 2
-    },
-
-    // === EXPLOSIVES ===
-    'bomb': {
-        kind: 'bomb', name: 'Bomb', glyph: '*', color: 'red', rarity: 'common',
-        desc: 'Explodes, damaging nearby foes.',
-        effect: 'bomb', damage: 18, radius: 1
-    },
-
-    'bigBomb': {
-        kind: 'bomb', name: 'Greater Bomb', glyph: '*', color: 'orange', rarity: 'rare',
-        desc: 'Large explosion with increased damage.',
-        effect: 'bomb', damage: 25, radius: 2
-    },
-
-    // === SPECIAL ===
-    'gold': {
-        kind: 'gold', name: 'Gold Coins', glyph: '$', color: 'gold', rarity: 'common',
-        desc: 'Shiny gold coins.',
-        effect: 'gold'
-    }
-};
-
-// Helper functions to easily create new items
+// Helper functions to easily create consistent item classes
 const ItemHelpers = {
-    // Create a healing potion
-    healingPotion(name, amount, color = 'purple', rarity = 'common') {
-        return {
-            kind: 'potion', name, glyph: '!', color, rarity,
-            desc: `Restore ${amount} HP.`,
-            effect: 'heal', amount
-        };
+    definePotion(options) {
+        return Object.assign({
+            kind: 'potion',
+            glyph: '!',
+            rarity: 'common',
+            color: 'purple'
+        }, options);
     },
 
-    // Create a temporary boost item  
+    defineElixir(options) {
+        return Object.assign({
+            kind: 'elixir',
+            glyph: '!',
+            rarity: 'rare',
+            color: 'orange'
+        }, options);
+    },
+
+    defineScroll(options) {
+        return Object.assign({
+            kind: 'scroll',
+            glyph: '?',
+            rarity: 'common',
+            color: 'yellow'
+        }, options);
+    },
+
+    defineRelic(options) {
+        return Object.assign({
+            kind: 'relic',
+            glyph: 'o',
+            rarity: 'epic',
+            color: 'blue',
+            effect: 'permanentBoost'
+        }, options);
+    },
+
+    defineBomb(options) {
+        return Object.assign({
+            kind: 'bomb',
+            glyph: '*',
+            rarity: 'common',
+            color: 'red',
+            effect: 'bomb'
+        }, options);
+    },
+
+    defineGold(options) {
+        return Object.assign({
+            kind: 'gold',
+            name: 'Gold Coins',
+            glyph: '$',
+            color: 'gold',
+            rarity: 'common',
+            desc: 'Shiny gold coins.',
+            effect: 'gold'
+        }, options);
+    },
+
+    healingPotion(name, amount, color = 'purple', rarity = 'common') {
+        return this.definePotion({
+            name,
+            color,
+            rarity,
+            desc: `Restore ${amount} HP.`,
+            effect: 'heal',
+            amount
+        });
+    },
+
     tempBoostItem(name, boostType, bonus, turns, glyph = '!', color = 'cyan', rarity = 'rare') {
         const descriptions = {
             speed: `Move faster for ${turns} turns.`,
             strength: `+${bonus} STR for ${turns} turns.`,
             light: `Boost vision radius for ${turns} turns.`
         };
-        
-        return {
-            kind: boostType === 'light' ? 'scroll' : 'potion',
-            name, glyph, color, rarity,
+        const define = glyph === '?' ? this.defineScroll : this.definePotion;
+
+        return define.call(this, {
+            name,
+            glyph,
+            color,
+            rarity,
             desc: descriptions[boostType] || `Boost ${boostType} for ${turns} turns.`,
-            effect: 'tempBoost', boostType, bonus, turns
-        };
+            effect: 'tempBoost',
+            boostType,
+            bonus,
+            turns
+        });
     },
 
-    // Create a permanent upgrade
     permanentUpgrade(name, boostType, bonus, glyph = 'o', color = 'blue', rarity = 'epic') {
         const descriptions = {
             vision: `Permanently increases vision by ${bonus}.`,
             health: `Permanently increases max HP by ${bonus}.`,
             strength: `Permanently increases strength by ${bonus}.`
         };
-        
-        return {
-            kind: 'orb', name, glyph, color, rarity,
+
+        return this.defineRelic({
+            name,
+            glyph,
+            color,
+            rarity,
             desc: descriptions[boostType] || `Permanently boost ${boostType} by ${bonus}.`,
-            effect: 'permanentBoost', boostType, bonus
-        };
+            boostType,
+            bonus
+        });
     },
 
-    // Create an explosive
     explosive(name, damage, radius, color = 'red', rarity = 'common') {
-        return {
-            kind: 'bomb', name, glyph: '*', color, rarity,
+        return this.defineBomb({
+            name,
+            color,
+            rarity,
             desc: `Explodes, dealing ${damage} damage in ${radius} tile radius.`,
-            effect: 'bomb', damage, radius
-        };
+            damage,
+            radius
+        });
     }
+};
+
+// Item Registry - Add new items here!
+const ItemRegistry = {
+    // === POTIONS ===
+    'potion': ItemHelpers.healingPotion('Healing Potion', 25, 'purple', 'common'),
+    'minorHeal': ItemHelpers.healingPotion('Minor Healing Potion', 15, 'pink', 'common'),
+    'megaHeal': ItemHelpers.healingPotion('Greater Healing Potion', 50, 'red', 'rare'),
+    'speed': ItemHelpers.definePotion({
+        name: 'Speed Potion',
+        color: 'cyan',
+        rarity: 'rare',
+        desc: 'Move faster - enemies act less frequently for 15 turns.',
+        effect: 'tempBoost',
+        boostType: 'speed',
+        bonus: 3,
+        turns: 15
+    }),
+    'ironSkin': ItemHelpers.definePotion({
+        name: 'Iron Skin Potion',
+        color: 'gray',
+        rarity: 'rare',
+        desc: 'Reduce incoming damage for 10 turns.',
+        effect: 'tempBoost',
+        boostType: 'damageReduction',
+        reduction: 0.35,
+        turns: 10
+    }),
+    'fleetfoot': ItemHelpers.definePotion({
+        name: 'Fleetfoot Potion',
+        color: 'white',
+        rarity: 'rare',
+        desc: 'Move faster for 8 turns.',
+        effect: 'tempBoost',
+        boostType: 'speed',
+        bonus: 4,
+        turns: 8
+    }),
+    'clarity': ItemHelpers.definePotion({
+        name: 'Clarity Potion',
+        color: 'blue',
+        rarity: 'rare',
+        desc: '+2 ACC and +2 EVA for 18 turns.',
+        effect: 'tempBoost',
+        boostType: 'clarity',
+        accuracyBonus: 2,
+        evasionBonus: 2,
+        turns: 18
+    }),
+    'antidote': ItemHelpers.definePotion({
+        name: 'Antidote Potion',
+        color: 'green',
+        rarity: 'common',
+        desc: 'Cleanses harmful status effects.',
+        effect: 'utility',
+        utilityType: 'antidote'
+    }),
+    'mending': ItemHelpers.definePotion({
+        name: 'Mending Potion',
+        color: 'pink',
+        rarity: 'rare',
+        desc: 'Regain 3 HP per turn for 8 turns.',
+        effect: 'tempBoost',
+        boostType: 'regen',
+        regenAmount: 3,
+        bonus: 3,
+        turns: 8
+    }),
+
+    // === ELIXIRS ===
+    'strength': ItemHelpers.defineElixir({
+        name: 'Strength Elixir',
+        desc: '+5 STR for 20 turns.',
+        effect: 'tempBoost',
+        boostType: 'strength',
+        bonus: 5,
+        turns: 20
+    }),
+    'berserkerRage': ItemHelpers.defineElixir({
+        name: 'Berserker Rage',
+        color: 'darkred',
+        desc: '+8 STR for 12 turns.',
+        effect: 'tempBoost',
+        boostType: 'strength',
+        bonus: 8,
+        turns: 12
+    }),
+    'focusElixir': ItemHelpers.defineElixir({
+        name: 'Elixir of Focus',
+        color: 'blue',
+        desc: '+3 ACC for 20 turns.',
+        effect: 'tempBoost',
+        boostType: 'accuracy',
+        bonus: 3,
+        turns: 20
+    }),
+    'graceElixir': ItemHelpers.defineElixir({
+        name: 'Elixir of Grace',
+        color: 'cyan',
+        desc: '+3 EVA and +1 AGI for 20 turns.',
+        effect: 'tempBoost',
+        boostType: 'evasion',
+        bonus: 3,
+        agilityBonus: 1,
+        turns: 20
+    }),
+    'titanElixir': ItemHelpers.defineElixir({
+        name: 'Titan Elixir',
+        color: 'red',
+        rarity: 'epic',
+        desc: '+10 STR for 8 turns.',
+        effect: 'tempBoost',
+        boostType: 'strength',
+        bonus: 10,
+        turns: 8
+    }),
+    'guardianElixir': ItemHelpers.defineElixir({
+        name: 'Guardian Elixir',
+        color: 'green',
+        rarity: 'rare',
+        desc: '+20 max HP for 16 turns.',
+        effect: 'tempBoost',
+        boostType: 'maxHealth',
+        bonus: 20,
+        turns: 16
+    }),
+    'glassFury': ItemHelpers.defineElixir({
+        name: 'Glass Fury Elixir',
+        color: 'purple',
+        rarity: 'epic',
+        desc: '+12 STR but -3 EVA for 10 turns.',
+        effect: 'tempBoost',
+        boostType: 'glassFury',
+        bonus: 12,
+        evasionPenalty: 3,
+        turns: 10
+    }),
+
+    // === SCROLLS ===
+    'scroll': ItemHelpers.defineScroll({
+        name: 'Scroll of Light',
+        desc: 'Boost vision radius temporarily.',
+        effect: 'tempBoost',
+        boostType: 'light',
+        bonus: 3,
+        turns: 20
+    }),
+    'scrollGreaterLight': ItemHelpers.defineScroll({
+        name: 'Scroll of Greater Light',
+        color: 'gold',
+        rarity: 'rare',
+        desc: 'Greatly boost vision radius temporarily.',
+        effect: 'tempBoost',
+        boostType: 'light',
+        bonus: 5,
+        turns: 25
+    }),
+    'scrollHaste': ItemHelpers.defineScroll({
+        name: 'Scroll of Haste',
+        color: 'cyan',
+        rarity: 'rare',
+        desc: 'Move much faster for 10 turns.',
+        effect: 'tempBoost',
+        boostType: 'speed',
+        bonus: 3,
+        turns: 10
+    }),
+    'scrollMapping': ItemHelpers.defineScroll({
+        name: 'Scroll of Mapping',
+        color: 'white',
+        rarity: 'rare',
+        desc: 'Reveal the current floor layout.',
+        effect: 'utility',
+        utilityType: 'mapping'
+    }),
+    'scrollDetection': ItemHelpers.defineScroll({
+        name: 'Scroll of Detection',
+        color: 'orange',
+        rarity: 'rare',
+        desc: 'Sense nearby foes and items.',
+        effect: 'utility',
+        utilityType: 'detection',
+        radius: 8
+    }),
+    'scrollBlink': ItemHelpers.defineScroll({
+        name: 'Scroll of Blink',
+        color: 'purple',
+        rarity: 'rare',
+        desc: 'Teleport a short distance.',
+        effect: 'utility',
+        utilityType: 'blink',
+        radius: 6
+    }),
+    'scrollSilence': ItemHelpers.defineScroll({
+        name: 'Scroll of Silence',
+        color: 'gray',
+        rarity: 'rare',
+        desc: 'Quiet nearby foes for 8 turns.',
+        effect: 'utility',
+        utilityType: 'silence',
+        radius: 5,
+        turns: 8
+    }),
+    'scrollWarding': ItemHelpers.defineScroll({
+        name: 'Scroll of Warding',
+        color: 'gold',
+        rarity: 'epic',
+        desc: 'Push adjacent foes back and block attacks briefly.',
+        effect: 'utility',
+        utilityType: 'warding',
+        radius: 1,
+        turns: 5
+    }),
+
+    // === RELICS ===
+    'vitality': ItemHelpers.permanentUpgrade('Vitality Relic', 'health', 15, 'o', 'green', 'epic'),
+    'vision': ItemHelpers.permanentUpgrade('Vision Orb', 'vision', 1, 'o', 'blue', 'epic'),
+    'powerStone': ItemHelpers.permanentUpgrade('Power Stone', 'strength', 2, '*', 'red', 'epic'),
+    'eyeOfTruth': ItemHelpers.permanentUpgrade('Eye of Truth', 'vision', 2, 'E', 'silver', 'epic'),
+    'heartRelic': ItemHelpers.permanentUpgrade('Heart Relic', 'health', 25, 'o', 'pink', 'epic'),
+    'lensRelic': ItemHelpers.permanentUpgrade('Lens Relic', 'vision', 2, 'o', 'cyan', 'epic'),
+    'bladeRelic': ItemHelpers.permanentUpgrade('Blade Relic', 'strength', 3, '/', 'red', 'epic'),
+    'featherRelic': ItemHelpers.permanentUpgrade('Feather Relic', 'agility', 2, 'o', 'white', 'epic'),
+    'coinRelic': ItemHelpers.defineRelic({
+        name: 'Coin Relic',
+        glyph: '$',
+        color: 'gold',
+        desc: 'Permanently increases gold pickups by 25%.',
+        boostType: 'goldBonus',
+        bonus: 0.25
+    }),
+    'scholarRelic': ItemHelpers.defineRelic({
+        name: 'Scholar Relic',
+        glyph: 'o',
+        color: 'blue',
+        desc: 'Permanently increases XP gained by 25%.',
+        boostType: 'xpBonus',
+        bonus: 0.25
+    }),
+
+    // === EXPLOSIVES ===
+    'bomb': ItemHelpers.explosive('Bomb', 18, 1, 'red', 'common'),
+    'bigBomb': ItemHelpers.explosive('Greater Bomb', 25, 2, 'orange', 'rare'),
+
+    // === SPECIAL ===
+    'gold': ItemHelpers.defineGold()
 };
 
 // Easy way to add new items to the registry
@@ -392,12 +898,11 @@ function registerItem(id, itemData) {
 // Example of how easy it is to add new items:
 // registerItem('superHeal', ItemHelpers.healingPotion('Super Healing Potion', 75, 'gold', 'epic'));
 // registerItem('fireBlast', ItemHelpers.explosive('Fire Blast', 30, 2, 'orange', 'rare'));
-// registerItem('wisdomScroll', ItemHelpers.tempBoostItem('Scroll of Wisdom', 'light', 6, 30, '?', 'white', 'epic'));
-
-// Register some bonus items dynamically as examples:
-registerItem('minorHeal', ItemHelpers.healingPotion('Minor Healing Potion', 15, 'pink', 'common'));
-registerItem('berserkerRage', ItemHelpers.tempBoostItem('Berserker Rage', 'strength', 8, 12, '!', 'darkred', 'rare'));
-registerItem('eyeOfTruth', ItemHelpers.permanentUpgrade('Eye of Truth', 'vision', 2, '👁', 'silver', 'epic'));
+// registerItem('wisdomScroll', ItemHelpers.defineScroll({
+//     name: 'Scroll of Wisdom', color: 'white', rarity: 'epic',
+//     desc: 'Boost vision radius for 30 turns.', effect: 'tempBoost',
+//     boostType: 'light', bonus: 6, turns: 30
+// }));
 
 /**
  * Get item data definition for a given item type
@@ -448,9 +953,20 @@ function spawnItemsAvoiding(px, py) {
             if (x === px && y === py) continue;
             
             // Updated item spawn list with new items
-            const commonItems = ['potion', 'bomb', 'scroll', 'minorHeal'];
-            const rareItems = ['speed', 'strength', 'megaHeal', 'scrollGreaterLight', 'berserkerRage', 'bigBomb'];
-            const epicItems = ['vision', 'vitality', 'powerStone', 'eyeOfTruth'];
+            const commonItems = ['potion', 'bomb', 'scroll', 'minorHeal', 'antidote'];
+            const rareItems = [
+                'speed', 'strength', 'megaHeal', 'scrollGreaterLight',
+                'berserkerRage', 'bigBomb', 'ironSkin', 'fleetfoot',
+                'clarity', 'mending', 'focusElixir', 'graceElixir',
+                'guardianElixir', 'scrollMapping', 'scrollDetection',
+                'scrollBlink', 'scrollSilence'
+            ];
+            const epicItems = [
+                'vision', 'vitality', 'powerStone', 'eyeOfTruth',
+                'titanElixir', 'glassFury', 'scrollWarding',
+                'heartRelic', 'lensRelic', 'bladeRelic',
+                'featherRelic', 'coinRelic', 'scholarRelic'
+            ];
             
             let itemType;
             const roll = Math.random();
@@ -509,7 +1025,7 @@ function pickupItemsAt(x, y) {
         const item = Game.ECS.getComponent(eid, 'item');
         if (item) {
             if (item.effect === 'gold') {
-                const amount = item.amount || 1;
+                const amount = Math.max(1, Math.floor((item.amount || 1) * (Game.state.goldMultiplier || 1)));
                 Game.state.playerGold += amount;
                 Game.stats.goldCollected += amount;
 

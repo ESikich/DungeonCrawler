@@ -64,7 +64,18 @@ Game.Systems = (function() {
 
                 const dmg = randInt(3, 8) + Math.floor(as.strength / 3);
                 const isCritical = Math.random() < 0.1;
-                const finalDamage = isCritical ? Math.floor(dmg * 1.5) : dmg;
+                let finalDamage = isCritical ? Math.floor(dmg * 1.5) : dmg;
+
+                if (targetId === Game.world.playerEid) {
+                    const status = Game.ECS.getComponent(targetId, 'status');
+                    if (status && status.wardingBoost > 0) {
+                        addMessage('The ward turns the attack aside.');
+                        return;
+                    }
+                    if (status && status.damageReductionBoost > 0) {
+                        finalDamage = Math.max(1, Math.floor(finalDamage * (1 - (status.damageReductionPercent || 0.35))));
+                    }
+                }
 
                 th.hp -= finalDamage;
 
@@ -302,9 +313,10 @@ Game.Systems = (function() {
                 const ppos = Game.ECS.getComponent(Game.world.playerEid, 'position');
                 if (!prog) return;
 
-                prog.xp += Math.max(0, amount | 0);
-                Game.stats.totalXpGained += Math.max(0, amount | 0);
-                addMessage('Gained ' + amount + ' XP.');
+                const gained = Math.max(0, Math.floor((amount | 0) * (Game.state.xpMultiplier || 1)));
+                prog.xp += gained;
+                Game.stats.totalXpGained += gained;
+                addMessage('Gained ' + gained + ' XP.');
 
                 while (prog.xp >= prog.next) {
                     prog.xp -= prog.next;
@@ -367,6 +379,87 @@ Game.Systems = (function() {
                         stats.strength -= st.strengthBonusAmount;
                         addMessage('Your strength returns to normal.');
                         st.strengthBonusAmount = 0;
+                    }
+                }
+                if (st.accuracyBoost > 0) {
+                    st.accuracyBoost--;
+                    if (st.accuracyBoost === 0 && stats && st.accuracyBonusAmount) {
+                        stats.accuracy -= st.accuracyBonusAmount;
+                        addMessage('Your focus softens.');
+                        st.accuracyBonusAmount = 0;
+                    }
+                }
+                if (st.evasionBoost > 0) {
+                    st.evasionBoost--;
+                    if (st.evasionBoost === 0 && stats) {
+                        if (st.evasionBonusAmount) stats.evasion -= st.evasionBonusAmount;
+                        if (st.agilityBonusAmount) stats.agility -= st.agilityBonusAmount;
+                        addMessage('Your graceful edge fades.');
+                        st.evasionBonusAmount = 0;
+                        st.agilityBonusAmount = 0;
+                    }
+                }
+                if (st.clarityBoost > 0) {
+                    st.clarityBoost--;
+                    if (st.clarityBoost === 0 && stats) {
+                        if (st.clarityAccuracyAmount) stats.accuracy -= st.clarityAccuracyAmount;
+                        if (st.clarityEvasionAmount) stats.evasion -= st.clarityEvasionAmount;
+                        addMessage('Your clarity fades.');
+                        st.clarityAccuracyAmount = 0;
+                        st.clarityEvasionAmount = 0;
+                    }
+                }
+                if (st.damageReductionBoost > 0) {
+                    st.damageReductionBoost--;
+                    if (st.damageReductionBoost === 0) {
+                        addMessage('Your skin softens.');
+                        st.damageReductionPercent = 0;
+                    }
+                }
+                if (st.regenBoost > 0) {
+                    const hp = Game.ECS.getComponent(Game.world.playerEid, 'health');
+                    if (hp && hp.hp < hp.maxHp) {
+                        const before = hp.hp;
+                        hp.hp = Math.min(hp.maxHp, hp.hp + (st.regenAmount || 1));
+                        Game.Events.emit('player.healed', {
+                            entityId: Game.world.playerEid,
+                            position: Game.ECS.getComponent(Game.world.playerEid, 'position'),
+                            amount: hp.hp - before,
+                            source: 'regen'
+                        });
+                    }
+                    st.regenBoost--;
+                    if (st.regenBoost === 0) {
+                        addMessage('The mending warmth fades.');
+                        st.regenAmount = 0;
+                    }
+                }
+                if (st.tempMaxHpBoost > 0) {
+                    st.tempMaxHpBoost--;
+                    if (st.tempMaxHpBoost === 0) {
+                        const hp = Game.ECS.getComponent(Game.world.playerEid, 'health');
+                        if (hp && st.tempMaxHpAmount) {
+                            hp.maxHp = Math.max(1, hp.maxHp - st.tempMaxHpAmount);
+                            hp.hp = Math.min(hp.hp, hp.maxHp);
+                            addMessage('The guardian force fades.');
+                        }
+                        st.tempMaxHpAmount = 0;
+                    }
+                }
+                if (st.glassFuryBoost > 0) {
+                    st.glassFuryBoost--;
+                    if (st.glassFuryBoost === 0 && stats) {
+                        if (st.glassFuryStrengthAmount) stats.strength -= st.glassFuryStrengthAmount;
+                        if (st.glassFuryEvasionPenalty) stats.evasion += st.glassFuryEvasionPenalty;
+                        addMessage('The glass fury shatters.');
+                        st.glassFuryStrengthAmount = 0;
+                        st.glassFuryEvasionPenalty = 0;
+                    }
+                }
+                if (st.wardingBoost > 0) {
+                    st.wardingBoost--;
+                    if (st.wardingBoost === 0) {
+                        addMessage('The ward fades.');
                     }
                 }
             }

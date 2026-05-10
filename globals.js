@@ -25,7 +25,9 @@ const Game = {
         playerGold: 0,
         playerAttackedThisTurn: false,
         justDescended: false,
-        speedActionCount: 0
+        speedActionCount: 0,
+        goldMultiplier: 1,
+        xpMultiplier: 1
     },
 
     // --- World Data ---
@@ -169,6 +171,8 @@ const Game = {
         this.state.playerAttackedThisTurn = false;
         this.state.justDescended = false;
         this.state.speedActionCount = 0;
+        this.state.goldMultiplier = 1;
+        this.state.xpMultiplier = 1;
 
         this.effects.explosions = [];
         this.events.clearSession();

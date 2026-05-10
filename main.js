@@ -360,7 +360,19 @@ function createPlayer(x, y, ecs = Game.ECS) {
     ecs.addComponent(eid, 'blocker', {passable: false});
     ecs.addComponent(eid, 'progress', {xp: 0, level: 1, next: 20});
     ecs.addComponent(eid, 'inventory', {items: [], capacity: 12});
-    ecs.addComponent(eid, 'status', {lightBoost: 0, speedBoost: 0, strengthBoost: 0});
+    ecs.addComponent(eid, 'status', {
+        lightBoost: 0,
+        speedBoost: 0,
+        strengthBoost: 0,
+        accuracyBoost: 0,
+        evasionBoost: 0,
+        clarityBoost: 0,
+        damageReductionBoost: 0,
+        regenBoost: 0,
+        tempMaxHpBoost: 0,
+        glassFuryBoost: 0,
+        wardingBoost: 0
+    });
     return eid;
 }
 

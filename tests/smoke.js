@@ -248,6 +248,119 @@ function testItemCreatedEvent() {
     assert(result.hasItem, 'Game.Items.create should still create an item entity');
 }
 
+function testItemTaxonomy() {
+    const result = run(`
+        (function() {
+            const items = Object.values(Game.Items.registry);
+            const permanentNonRelics = items
+                .filter(item => item.effect === 'permanentBoost' && item.kind !== 'relic')
+                .map(item => item.name);
+            const relicsWithoutPermanent = items
+                .filter(item => item.kind === 'relic' && item.effect !== 'permanentBoost')
+                .map(item => item.name);
+
+            return {
+                permanentNonRelics,
+                relicsWithoutPermanent,
+                potionKinds: [
+                    'potion', 'minorHeal', 'megaHeal', 'speed', 'ironSkin',
+                    'fleetfoot', 'clarity', 'antidote', 'mending'
+                ].map(id => Game.Items.dataFor(id).kind),
+                elixirKinds: [
+                    'strength', 'berserkerRage', 'focusElixir',
+                    'graceElixir', 'titanElixir', 'guardianElixir', 'glassFury'
+                ].map(id => Game.Items.dataFor(id).kind),
+                scrollKinds: [
+                    'scroll', 'scrollGreaterLight', 'scrollHaste',
+                    'scrollMapping', 'scrollDetection', 'scrollBlink',
+                    'scrollSilence', 'scrollWarding'
+                ].map(id => Game.Items.dataFor(id).kind),
+                relicKinds: [
+                    'vitality', 'vision', 'powerStone', 'eyeOfTruth',
+                    'heartRelic', 'lensRelic', 'bladeRelic',
+                    'featherRelic', 'coinRelic', 'scholarRelic'
+                ].map(id => Game.Items.dataFor(id).kind),
+                bombKinds: ['bomb', 'bigBomb'].map(id => Game.Items.dataFor(id).kind)
+            };
+        })();
+    `);
+
+    assert(result.permanentNonRelics.length === 0, 'only relics should use permanentBoost');
+    assert(result.relicsWithoutPermanent.length === 0, 'all relics should be permanent upgrades');
+    assert(result.potionKinds.every(kind => kind === 'potion'), 'potion IDs should be kind=potion');
+    assert(result.elixirKinds.every(kind => kind === 'elixir'), 'elixir IDs should be kind=elixir');
+    assert(result.scrollKinds.every(kind => kind === 'scroll'), 'scroll IDs should be kind=scroll');
+    assert(result.relicKinds.every(kind => kind === 'relic'), 'relic IDs should be kind=relic');
+    assert(result.bombKinds.every(kind => kind === 'bomb'), 'bomb IDs should be kind=bomb');
+}
+
+function testNewItemEffects() {
+    const result = run(`
+        (function() {
+            const inv = Game.ECS.getComponent(Game.world.playerEid, 'inventory');
+            const status = Game.ECS.getComponent(Game.world.playerEid, 'status');
+            const stats = Game.ECS.getComponent(Game.world.playerEid, 'stats');
+            const hp = Game.ECS.getComponent(Game.world.playerEid, 'health');
+            const vision = Game.ECS.getComponent(Game.world.playerEid, 'vision');
+            const before = {
+                accuracy: stats.accuracy,
+                evasion: stats.evasion,
+                agility: stats.agility,
+                strength: stats.strength,
+                maxHp: hp.maxHp,
+                vision: vision.radius,
+                goldMultiplier: Game.state.goldMultiplier,
+                xpMultiplier: Game.state.xpMultiplier
+            };
+
+            function use(id) {
+                inv.items.push(JSON.parse(JSON.stringify(Game.Items.dataFor(id))));
+                return Game.Items.useInventoryItem(inv.items.length - 1);
+            }
+
+            const used = {
+                ironSkin: use('ironSkin'),
+                mending: use('mending'),
+                focus: use('focusElixir'),
+                grace: use('graceElixir'),
+                guardian: use('guardianElixir'),
+                glassFury: use('glassFury'),
+                blink: use('scrollBlink'),
+                warding: use('scrollWarding'),
+                coin: use('coinRelic'),
+                scholar: use('scholarRelic'),
+                feather: use('featherRelic')
+            };
+
+            return {
+                used,
+                damageReductionBoost: status.damageReductionBoost,
+                regenBoost: status.regenBoost,
+                accuracyDelta: stats.accuracy - before.accuracy,
+                evasionDelta: stats.evasion - before.evasion,
+                agilityDelta: stats.agility - before.agility,
+                strengthDelta: stats.strength - before.strength,
+                maxHpDelta: hp.maxHp - before.maxHp,
+                wardingBoost: status.wardingBoost,
+                goldMultiplier: Game.state.goldMultiplier,
+                xpMultiplier: Game.state.xpMultiplier
+            };
+        })();
+    `);
+
+    assert(Object.values(result.used).every(Boolean), 'new representative items should be usable');
+    assert(result.damageReductionBoost > 0, 'Iron Skin should set damage reduction');
+    assert(result.regenBoost > 0, 'Mending should set regeneration');
+    assert(result.accuracyDelta >= 3, 'Focus should increase accuracy');
+    assert(result.evasionDelta >= 0, 'Grace/Glass Fury/Feather combined should not break evasion');
+    assert(result.agilityDelta >= 2, 'Feather/Grace should increase agility');
+    assert(result.strengthDelta >= 12, 'Glass Fury should increase strength');
+    assert(result.maxHpDelta >= 20, 'Guardian should increase max HP temporarily');
+    assert(result.wardingBoost > 0, 'Warding should set warding status');
+    assert(result.goldMultiplier > 1, 'Coin Relic should increase gold multiplier');
+    assert(result.xpMultiplier > 1, 'Scholar Relic should increase XP multiplier');
+}
+
 function testMonsterCreatedEvent() {
     const result = run(`
         (function() {
@@ -284,6 +397,8 @@ testStairsReachable();
 testTurnProcessing();
 testCombatDamageEvent();
 testItemCreatedEvent();
+testItemTaxonomy();
+testNewItemEffects();
 testMonsterCreatedEvent();
 
 console.log('Smoke tests passed');

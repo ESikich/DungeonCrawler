@@ -476,6 +476,11 @@ function processMonsterAI() {
         const pos = Game.ECS.getComponent(eid, 'position');
         const desc = Game.ECS.getComponent(eid, 'descriptor');
 
+        if (ai.silenced > 0) {
+            ai.silenced--;
+            continue;
+        }
+
         // Get behavior handler
         const behaviorName = ai.behavior || 'chase';
         const behavior = MonsterBehaviors[behaviorName];
