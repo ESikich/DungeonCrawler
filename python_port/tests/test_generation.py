@@ -1,0 +1,74 @@
+from dungeon_crawler.core.config import GameConfig
+from dungeon_crawler.core.generation import count_reachable_walkable_tiles, generate_basic_dungeon, generate_basic_overworld
+from dungeon_crawler.core.rng import Rng
+
+
+def test_basic_generation_creates_valid_connected_map() -> None:
+    config = GameConfig()
+    level = generate_basic_dungeon(config, Rng(seed=123))
+    walkable_count = sum(tile.walkable for row in level.grid for tile in row)
+
+    assert len(level.grid) == config.dungeon_height
+    assert all(len(row) == config.dungeon_width for row in level.grid)
+    assert config.in_bounds(level.spawn.x, level.spawn.y)
+    assert level.grid[level.spawn.y][level.spawn.x].walkable is True
+    assert config.in_bounds(level.stairs.x, level.stairs.y)
+    assert level.grid[level.stairs.y][level.stairs.x].glyph == ">"
+    assert len(level.rooms) >= 2
+    assert count_reachable_walkable_tiles(level.grid, level.spawn) == walkable_count
+
+
+def test_generation_is_deterministic_for_same_seed() -> None:
+    config = GameConfig()
+    level_a = generate_basic_dungeon(config, Rng(seed=7))
+    level_b = generate_basic_dungeon(config, Rng(seed=7))
+
+    glyphs_a = [[tile.glyph for tile in row] for row in level_a.grid]
+    glyphs_b = [[tile.glyph for tile in row] for row in level_b.grid]
+
+    assert glyphs_a == glyphs_b
+    assert level_a.spawn == level_b.spawn
+    assert level_a.stairs == level_b.stairs
+    assert level_a.rooms == level_b.rooms
+
+
+def test_generation_creates_multiple_rooms_and_corridors() -> None:
+    config = GameConfig()
+    level = generate_basic_dungeon(config, Rng(seed=99))
+
+    assert len(level.rooms) >= 2
+    assert level.spawn != level.stairs
+    for x, y, width, height in level.rooms:
+        assert x >= 1
+        assert y >= 1
+        assert x + width < config.dungeon_width
+        assert y + height < config.dungeon_height
+
+
+def test_basic_overworld_generation_creates_origin_entrance_and_is_deterministic() -> None:
+    config = GameConfig()
+    overworld_a = generate_basic_overworld(config, section=(0, 0), seed=1234)
+    overworld_b = generate_basic_overworld(config, section=(0, 0), seed=1234)
+
+    assert len(overworld_a.grid) == config.dungeon_height
+    assert all(len(row) == config.dungeon_width for row in overworld_a.grid)
+    assert overworld_a.grid[overworld_a.spawn.y][overworld_a.spawn.x].walkable is True
+    assert overworld_a.entrance is not None
+    assert overworld_a.grid[overworld_a.entrance.y][overworld_a.entrance.x].special == "dungeonEntrance"
+    assert [[tile.glyph for tile in row] for row in overworld_a.grid] == [
+        [tile.glyph for tile in row] for row in overworld_b.grid
+    ]
+
+
+def test_overworld_generation_ports_regional_terrain_types() -> None:
+    config = GameConfig()
+    specials: set[str] = set()
+
+    for section in ((0, 0), (1, 0), (-1, 1), (4, 4), (5, -2)):
+        overworld = generate_basic_overworld(config, section=section, seed=1234)
+        specials.update(tile.special or "" for row in overworld.grid for tile in row)
+
+    assert "grass" in specials
+    assert "tree" in specials
+    assert "water" in specials or "ocean" in specials
+    assert "sand" in specials
