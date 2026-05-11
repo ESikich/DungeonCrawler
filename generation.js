@@ -21,7 +21,7 @@ Tile.floor = function() {
 };
 
 Tile.stairs = function() {
-    return new Tile(true, false, [50, 50, 50], '>', 'dungeonEntrance');
+    return new Tile(true, false, [50, 50, 50], '>', 'downStairs');
 };
 
 Tile.upStairs = function() {
@@ -230,6 +230,66 @@ function generateDungeon() {
 
 function overworldSectionKey(section) {
     return section.x + ',' + section.y;
+}
+
+function dungeonIdForSection(section) {
+    return overworldSectionKey(section);
+}
+
+function sectionHasDungeon(section) {
+    if (section.x === 0 && section.y === 0) return true;
+    return overworldRange(section, 905, 0, 8) === 0;
+}
+
+function rememberDungeonEntrance(section, entrance) {
+    const id = dungeonIdForSection(section);
+    if (!Game.world.dungeons[id]) {
+        Game.world.dungeons[id] = {
+            id: id,
+            section: {x: section.x, y: section.y},
+            entrance: {x: entrance.x, y: entrance.y},
+            maxDepth: null
+        };
+    } else {
+        Game.world.dungeons[id].section = {x: section.x, y: section.y};
+        Game.world.dungeons[id].entrance = {x: entrance.x, y: entrance.y};
+    }
+    return Game.world.dungeons[id];
+}
+
+function findOverworldDungeonEntrance(section) {
+    const preferred = {
+        x: overworldRange(section, 906, 3, Game.config.DUNGEON_WIDTH - 4),
+        y: overworldRange(section, 907, 3, Game.config.DUNGEON_HEIGHT - 4)
+    };
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (let y = 1; y < Game.config.DUNGEON_HEIGHT - 1; y++) {
+        for (let x = 1; x < Game.config.DUNGEON_WIDTH - 1; x++) {
+            const tile = Game.world.dungeonGrid[y][x];
+            if (!tile || !tile.walkable || tile.special === 'bridge') continue;
+
+            const distance = Math.abs(x - preferred.x) + Math.abs(y - preferred.y);
+            if (distance < bestDistance) {
+                best = {x: x, y: y};
+                bestDistance = distance;
+            }
+        }
+    }
+
+    return best || {x: Math.floor(Game.config.DUNGEON_WIDTH / 2), y: Math.floor(Game.config.DUNGEON_HEIGHT / 2)};
+}
+
+function placeDungeonEntranceForSection(section) {
+    if (!sectionHasDungeon(section)) return null;
+
+    const entrance = section.x === 0 && section.y === 0
+        ? { x: Math.floor(Game.config.DUNGEON_WIDTH / 2), y: 4 }
+        : findOverworldDungeonEntrance(section);
+    applyOverworldTile(entrance.x, entrance.y, Tile.dungeonEntrance());
+    rememberDungeonEntrance(section, entrance);
+    return entrance;
 }
 
 function overworldNoise(section, x, y, salt) {
@@ -1035,6 +1095,9 @@ function generateOverworldSection(section) {
     applyShorelineSand();
     applyGrassTones();
     applyWaterTones();
+    if (!(section.x === 0 && section.y === 0)) {
+        placeDungeonEntranceForSection(section);
+    }
 
     return { x: midX, y: midY };
 }
@@ -1045,12 +1108,13 @@ function generateOverworld() {
 
     const entrance = { x: Math.floor(Game.config.DUNGEON_WIDTH / 2), y: 4 };
     const spawn = { x: entrance.x, y: Game.config.DUNGEON_HEIGHT - 4 };
-    applyOverworldTile(entrance.x, entrance.y, Tile.dungeonEntrance());
+    placeDungeonEntranceForSection(section);
 
     for (let y = entrance.y + 1; y <= spawn.y; y++) {
         applyOverworldTile(entrance.x, y, Tile.grass());
     }
     applyOverworldTile(entrance.x, entrance.y, Tile.dungeonEntrance());
+    rememberDungeonEntrance(section, entrance);
 
     Game.world.dungeonEntrancePos = entrance;
     Game.world.overworldReturnPos = { x: entrance.x, y: entrance.y + 1 };

@@ -101,6 +101,7 @@ Game.Renderer = (function() {
             loadTileImage('rock', 'tiles/rock.png');
             loadTileImage('sand', 'tiles/sand.png');
             loadTileImage('dungeonEntrance', 'tiles/dungeonEntrance.png');
+            loadTileImage('downStairs', 'tiles/dungeonEntrance.png');
             loadTileImage('dungeonExit', 'tiles/dungeonExit.png');
             loadTileImage('slime', 'tiles/slime.png');
             loadTileImage('orcWarrior', 'tiles/orcWarrior.png');

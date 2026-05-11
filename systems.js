@@ -54,7 +54,7 @@ Game.Systems = (function() {
                 if (eid === Game.world.playerEid) { 
                     Game.Items.pickupAt(toX, toY);
                     const t = Game.world.dungeonGrid[toY][toX];
-                    if (t && t.special === 'dungeonEntrance') Game.Systems.World.enterDungeon();
+                    if (t && t.special === 'dungeonEntrance' && Game.state.area === 'overworld') Game.Systems.World.enterDungeon();
                     if (t && t.glyph === '>') Game.Systems.World.nextLevel();
                     if (t && t.glyph === '<') {
                         Game.Systems.World.previousLevel({
@@ -536,10 +536,117 @@ Game.Systems = (function() {
                 }
             },
 
+            dungeonLevelKey(floor) {
+                const dungeonId = Game.world.activeDungeonId || dungeonIdForSection(Game.world.overworldSection || {x: 0, y: 0});
+                return dungeonId + ':' + floor;
+            },
+
+            getPlayerLevel() {
+                const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+                return Math.max(1, prog && Number.isInteger(prog.level) ? prog.level : 1);
+            },
+
+            syncCurrentSectionDungeonEntrance() {
+                const section = Game.world.overworldSection || {x: 0, y: 0};
+                const id = dungeonIdForSection(section);
+                const dungeon = Game.world.dungeons && Game.world.dungeons[id];
+
+                if (dungeon && dungeon.entrance) {
+                    Game.world.dungeonEntrancePos = {x: dungeon.entrance.x, y: dungeon.entrance.y};
+                    return dungeon;
+                }
+
+                for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+                    for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                        const tile = Game.world.dungeonGrid[y][x];
+                        if (tile && tile.special === 'dungeonEntrance') {
+                            Game.world.dungeonEntrancePos = {x: x, y: y};
+                            return rememberDungeonEntrance(section, Game.world.dungeonEntrancePos);
+                        }
+                    }
+                }
+
+                Game.world.dungeonEntrancePos = { x: null, y: null };
+                return null;
+            },
+
+            activateCurrentDungeon() {
+                const section = Game.world.overworldSection || {x: 0, y: 0};
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                const tile = p && inBounds(p.x, p.y) ? Game.world.dungeonGrid[p.y][p.x] : null;
+                const entrance = tile && tile.special === 'dungeonEntrance'
+                    ? {x: p.x, y: p.y}
+                    : (Game.world.dungeonEntrancePos || {x: 12, y: 4});
+                const dungeon = rememberDungeonEntrance(section, entrance);
+                if (!Number.isInteger(dungeon.maxDepth)) {
+                    dungeon.maxDepth = this.getPlayerLevel();
+                }
+                Game.world.activeDungeonId = dungeon.id;
+                Game.world.dungeonEntrancePos = {x: dungeon.entrance.x, y: dungeon.entrance.y};
+                return dungeon;
+            },
+
+            getActiveDungeon() {
+                const id = Game.world.activeDungeonId;
+                return id && Game.world.dungeons ? Game.world.dungeons[id] : null;
+            },
+
+            getActiveDungeonMaxDepth() {
+                const activeDungeon = this.getActiveDungeon();
+                if (activeDungeon && Number.isInteger(activeDungeon.maxDepth)) {
+                    return Math.max(1, activeDungeon.maxDepth);
+                }
+                return 1;
+            },
+
+            canDescendFromCurrentFloor() {
+                if (Game.state.area !== 'dungeon') return false;
+                const targetFloor = Game.state.floor - 1;
+                return Math.abs(targetFloor) <= this.getActiveDungeonMaxDepth();
+            },
+
+            findDownStairs() {
+                for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+                    for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                        if (Game.world.dungeonGrid[y][x].glyph === '>') {
+                            return {x: x, y: y};
+                        }
+                    }
+                }
+                return null;
+            },
+
+            removeDownStairs() {
+                for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+                    for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+                        if (Game.world.dungeonGrid[y][x].glyph === '>') {
+                            Game.world.dungeonGrid[y][x] = Tile.floor();
+                        }
+                    }
+                }
+                Game.world.stairsPos = { x: null, y: null };
+            },
+
+            syncDownStairsForCurrentDepth() {
+                if (!this.canDescendFromCurrentFloor()) {
+                    this.removeDownStairs();
+                    return;
+                }
+
+                const existing = this.findDownStairs();
+                if (existing) {
+                    Game.world.stairsPos = existing;
+                    return;
+                }
+
+                const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+                if (p) placeStairsFarthestFrom(p.x, p.y);
+            },
+
             saveCurrentDungeonLevel() {
                 if (Game.state.area !== 'dungeon' || Game.state.floor >= 0) return;
 
-                Game.world.dungeonLevels[Game.state.floor] = {
+                Game.world.dungeonLevels[this.dungeonLevelKey(Game.state.floor)] = {
                     grid: this.cloneGrid(Game.world.dungeonGrid),
                     rooms: this.cloneRooms(Game.world.rooms),
                     stairsPos: this.cloneValue(Game.world.stairsPos),
@@ -568,7 +675,7 @@ Game.Systems = (function() {
             },
 
             restoreDungeonLevel(floor) {
-                const cached = Game.world.dungeonLevels[floor];
+                const cached = Game.world.dungeonLevels[this.dungeonLevelKey(floor)];
                 if (!cached) return false;
 
                 this.clearNonPlayerEntities();
@@ -576,6 +683,7 @@ Game.Systems = (function() {
                 Game.world.rooms = this.cloneRooms(cached.rooms);
                 Game.world.stairsPos = this.cloneValue(cached.stairsPos);
                 this.restoreNonPlayerEntities(cached.entities);
+                this.syncDownStairsForCurrentDepth();
                 return true;
             },
 
@@ -591,11 +699,13 @@ Game.Systems = (function() {
                     pruneInvalidBridges();
                     pruneWideBridgeComponents();
                     cleanupTinyWater();
+                    this.syncCurrentSectionDungeonEntrance();
                     return;
                 }
 
                 generateOverworldSection(section);
                 Game.world.overworldSections[key] = this.cloneGrid(Game.world.dungeonGrid);
+                this.syncCurrentSectionDungeonEntrance();
             },
 
             changeOverworldSection(toX, toY) {
@@ -680,7 +790,11 @@ Game.Systems = (function() {
                 }
 
                 placeUpStairsAt(p.x, p.y);
-                placeStairsFarthestFrom(p.x, p.y);
+                if (this.canDescendFromCurrentFloor()) {
+                    placeStairsFarthestFrom(p.x, p.y);
+                } else {
+                    Game.world.stairsPos = { x: null, y: null };
+                }
                 Game.Monsters.spawnAvoiding(p.x, p.y);
                 Game.Items.spawnAvoiding(p.x, p.y);
             },
@@ -716,6 +830,7 @@ Game.Systems = (function() {
 
                 if (this.restoreDungeonLevel(targetFloor)) {
                     this.setPlayerArrival(arrivalMode);
+                    this.syncDownStairsForCurrentDepth();
                 } else {
                     this.generateDungeonLevel(targetFloor, !!keepPosition);
                 }
@@ -727,9 +842,12 @@ Game.Systems = (function() {
             },
 
             enterDungeon() {
+                const dungeon = this.activateCurrentDungeon();
                 Game.Events.emit('world.enterDungeon', {
                     floor: Game.state.floor,
-                    playerId: Game.world.playerEid
+                    playerId: Game.world.playerEid,
+                    dungeonId: dungeon.id,
+                    maxDepth: dungeon.maxDepth
                 });
 
                 Game.world.overworldTransition = null;
@@ -749,14 +867,17 @@ Game.Systems = (function() {
                 Game.state.justDescended = true;
                 Game.world.overworldTransition = null;
 
+                const activeDungeon = this.getActiveDungeon();
+                const returnSection = activeDungeon && activeDungeon.section ? activeDungeon.section : {x: 0, y: 0};
+
                 if (!Game.world.overworldGrid || Game.world.overworldGrid.length === 0) {
                     generateOverworld();
                 } else {
-                    this.loadOverworldSection({x: 0, y: 0});
+                    this.loadOverworldSection(returnSection);
                 }
 
                 const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
-                const entrance = Game.world.dungeonEntrancePos || {x: 12, y: 4};
+                const entrance = activeDungeon && activeDungeon.entrance ? activeDungeon.entrance : (Game.world.dungeonEntrancePos || {x: 12, y: 4});
                 const dir = exitDirection && (exitDirection.x !== 0 || exitDirection.y !== 0)
                     ? exitDirection
                     : {x: 0, y: 1};
@@ -775,6 +896,7 @@ Game.Systems = (function() {
                 const overworldRadius = Math.max(8, oldVision ? oldVision.baseRadius : 8);
                 this.resetPlayerVision(overworldRadius);
                 Game.Systems.Vision.update(Game.world.playerEid);
+                Game.world.activeDungeonId = null;
                 addMessage('You climb back into the overworld.');
             },
 
@@ -789,12 +911,17 @@ Game.Systems = (function() {
             },
 
             nextLevel() {
+                const targetFloor = Game.state.floor - 1;
+                if (!this.canDescendFromCurrentFloor()) {
+                    addMessage('This dungeon goes no deeper.');
+                    return;
+                }
+
                 Game.Events.emit('world.descendStart', {
                     floor: Game.state.floor,
                     playerId: Game.world.playerEid
                 });
 
-                const targetFloor = Game.state.floor - 1;
                 Game.stats.floorsDescended++;
 
                 this.goToDungeonFloor(targetFloor, 'upStairs', 'You descend to floor ' + targetFloor + '...', true);

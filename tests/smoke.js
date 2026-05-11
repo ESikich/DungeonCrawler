@@ -206,6 +206,8 @@ function testTurnProcessing() {
 function testDungeonEntryAndExit() {
     const result = run(`
         (function() {
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = Math.max(prog.level, 2);
             Game.Systems.World.enterDungeon();
             const dungeonPos = Game.ECS.getComponent(Game.world.playerEid, 'position');
             const entryTile = Game.world.dungeonGrid[dungeonPos.y][dungeonPos.x];
@@ -242,6 +244,8 @@ function testDungeonEntryAndExit() {
 function testDungeonBacktrackingAndPersistence() {
     const result = run(`
         (function() {
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = Math.max(prog.level, 2);
             Game.Systems.World.enterDungeon();
 
             let marker = null;
@@ -283,12 +287,232 @@ function testDungeonBacktrackingAndPersistence() {
     assert(result.finalArea === 'overworld' && result.finalFloor === 0, 'previousLevel from floor -1 should exit to the overworld');
 }
 
+function testDungeonMaxDepthMatchesEntryLevel() {
+    const result = run(`
+        (function() {
+            if (Game.state.area !== 'overworld') {
+                Game.Systems.World.exitDungeon();
+            }
+
+            let section = null;
+            for (let sy = -5; sy <= 5 && !section; sy++) {
+                for (let sx = -5; sx <= 5; sx++) {
+                    const id = sx + ',' + sy;
+                    if ((sx !== 0 || sy !== 0) && sectionHasDungeon({x: sx, y: sy}) && !Game.world.dungeons[id]) {
+                        section = {x: sx, y: sy};
+                        break;
+                    }
+                }
+            }
+            if (!section) return {foundSection: false};
+
+            Game.Systems.World.loadOverworldSection(section);
+            const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+            p.x = Game.world.dungeonEntrancePos.x;
+            p.y = Game.world.dungeonEntrancePos.y;
+
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = 1;
+            Game.Systems.World.enterDungeon();
+            const hasDownStairs = Number.isInteger(Game.world.stairsPos.x) && Number.isInteger(Game.world.stairsPos.y);
+            Game.Systems.World.nextLevel();
+
+            const stoppedAtFirstFloor = Game.state.area === 'dungeon' && Game.state.floor === -1;
+            const activeDungeon = Game.Systems.World.getActiveDungeon();
+            const maxDepth = activeDungeon ? activeDungeon.maxDepth : null;
+
+            Game.Systems.World.exitDungeon();
+            return {foundSection: true, stoppedAtFirstFloor, maxDepth, hasDownStairs};
+        })();
+    `);
+
+    assert(result.foundSection, 'the sampled overworld should include a fresh dungeon chunk');
+    assert(result.stoppedAtFirstFloor, 'dungeons should stop descending past the entry level max depth');
+    assert(result.maxDepth === 1, 'dungeon max depth should be set from the player level on entry');
+    assert(result.hasDownStairs === false, 'level 1 dungeon entries should not generate down stairs');
+}
+
+function testDungeonStairsRespectMaxDepth() {
+    const result = run(`
+        (function() {
+            if (Game.state.area !== 'overworld') {
+                Game.Systems.World.exitDungeon();
+            }
+
+            let section = null;
+            for (let sy = -6; sy <= 6 && !section; sy++) {
+                for (let sx = -6; sx <= 6; sx++) {
+                    const id = sx + ',' + sy;
+                    if ((sx !== 0 || sy !== 0) && sectionHasDungeon({x: sx, y: sy}) && !Game.world.dungeons[id]) {
+                        section = {x: sx, y: sy};
+                        break;
+                    }
+                }
+            }
+            if (!section) return {foundSection: false};
+
+            Game.Systems.World.loadOverworldSection(section);
+            const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+            p.x = Game.world.dungeonEntrancePos.x;
+            p.y = Game.world.dungeonEntrancePos.y;
+
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = 1;
+            Game.Systems.World.enterDungeon();
+
+            const stairs = {x: p.x + 1, y: p.y};
+            Game.world.dungeonGrid[stairs.y][stairs.x] = Tile.stairs();
+            const beforeFloor = Game.state.floor;
+            p.x = Math.max(0, stairs.x - 1);
+            p.y = stairs.y;
+            if (!Game.world.dungeonGrid[p.y][p.x].walkable) {
+                Game.world.dungeonGrid[p.y][p.x] = Tile.floor();
+            }
+
+            Game.Systems.Movement.handleMove(Game.world.playerEid, stairs.x, stairs.y);
+            const afterFloor = Game.state.floor;
+            const stillActiveDungeon = Game.state.area === 'dungeon' &&
+                Game.world.activeDungeonId === section.x + ',' + section.y;
+
+            Game.Systems.World.exitDungeon();
+            return {foundSection: true, beforeFloor, afterFloor, stillActiveDungeon};
+        })();
+    `);
+
+    assert(result.foundSection, 'the sampled overworld should include a fresh dungeon chunk for stair testing');
+    assert(result.beforeFloor === -1, 'test should start on dungeon floor -1');
+    assert(result.afterFloor === -1, 'walking onto down stairs at max depth should not descend');
+    assert(result.stillActiveDungeon, 'down stairs should not re-enter the dungeon as an overworld entrance');
+}
+
+function testOldDungeonDepthDoesNotIncreaseAfterLevelUp() {
+    const result = run(`
+        (function() {
+            if (Game.state.area !== 'overworld') {
+                Game.Systems.World.exitDungeon();
+            }
+
+            let section = null;
+            for (let sy = -7; sy <= 7 && !section; sy++) {
+                for (let sx = -7; sx <= 7; sx++) {
+                    const id = sx + ',' + sy;
+                    if ((sx !== 0 || sy !== 0) && sectionHasDungeon({x: sx, y: sy}) && !Game.world.dungeons[id]) {
+                        section = {x: sx, y: sy};
+                        break;
+                    }
+                }
+            }
+            if (!section) return {foundSection: false};
+
+            Game.Systems.World.loadOverworldSection(section);
+            const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+            p.x = Game.world.dungeonEntrancePos.x;
+            p.y = Game.world.dungeonEntrancePos.y;
+
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = 1;
+            Game.Systems.World.enterDungeon();
+            const firstEntryMaxDepth = Game.Systems.World.getActiveDungeon().maxDepth;
+            Game.Systems.World.exitDungeon();
+
+            p.x = Game.world.dungeonEntrancePos.x;
+            p.y = Game.world.dungeonEntrancePos.y;
+            prog.level = 2;
+            Game.Systems.World.enterDungeon();
+            const secondEntryMaxDepth = Game.Systems.World.getActiveDungeon().maxDepth;
+            const hasDownStairs = Number.isInteger(Game.world.stairsPos.x) && Number.isInteger(Game.world.stairsPos.y);
+            Game.Systems.World.nextLevel();
+            const stayedOnFirstFloor = Game.state.area === 'dungeon' && Game.state.floor === -1;
+
+            Game.Systems.World.exitDungeon();
+            return {foundSection: true, firstEntryMaxDepth, secondEntryMaxDepth, hasDownStairs, stayedOnFirstFloor};
+        })();
+    `);
+
+    assert(result.foundSection, 'the sampled overworld should include a fresh dungeon chunk for re-entry testing');
+    assert(result.firstEntryMaxDepth === 1, 'first entry should lock the dungeon to player level 1');
+    assert(result.secondEntryMaxDepth === 1, 're-entering an old dungeon should not increase its max depth');
+    assert(result.hasDownStairs === false, 'old level-1 dungeons should not gain down stairs after level up');
+    assert(result.stayedOnFirstFloor, 'old level-1 dungeons should still block descent after level up');
+}
+
+function testAdditionalDungeonEntrancePersistence() {
+    const result = run(`
+        (function() {
+            if (Game.state.area !== 'overworld') {
+                Game.Systems.World.exitDungeon();
+            }
+
+            let section = null;
+            for (let sy = -4; sy <= 4 && !section; sy++) {
+                for (let sx = -4; sx <= 4; sx++) {
+                    if ((sx !== 0 || sy !== 0) && sectionHasDungeon({x: sx, y: sy})) {
+                        section = {x: sx, y: sy};
+                        break;
+                    }
+                }
+            }
+            if (!section) return {foundSection: false};
+
+            Game.Systems.World.loadOverworldSection(section);
+            const entrance = Game.world.dungeonEntrancePos;
+            const p = Game.ECS.getComponent(Game.world.playerEid, 'position');
+            p.x = entrance.x;
+            p.y = entrance.y;
+
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = Math.max(prog.level, 2);
+            Game.Systems.World.enterDungeon();
+            const dungeonId = Game.world.activeDungeonId;
+
+            let marker = null;
+            for (let y = 1; y < Game.config.DUNGEON_HEIGHT - 1 && !marker; y++) {
+                for (let x = 1; x < Game.config.DUNGEON_WIDTH - 1; x++) {
+                    const tile = Game.world.dungeonGrid[y][x];
+                    if (tile.walkable && tile.glyph !== '<' && tile.glyph !== '>') {
+                        marker = {x, y};
+                        Game.world.dungeonGrid[y][x] = Tile.specialFloor([9, 8, 7]);
+                        break;
+                    }
+                }
+            }
+
+            Game.Systems.World.exitDungeon();
+            const returnedToSection = Game.world.overworldSection.x === section.x &&
+                Game.world.overworldSection.y === section.y;
+
+            p.x = entrance.x;
+            p.y = entrance.y;
+            Game.Systems.World.enterDungeon();
+            const markerTile = marker ? Game.world.dungeonGrid[marker.y][marker.x] : null;
+            const markerPersisted = markerTile && markerTile.color[0] === 9 &&
+                markerTile.color[1] === 8 && markerTile.color[2] === 7;
+            const reenteredSameDungeon = Game.world.activeDungeonId === dungeonId;
+
+            Game.Systems.World.exitDungeon();
+
+            return {
+                foundSection: true,
+                returnedToSection,
+                markerPersisted,
+                reenteredSameDungeon
+            };
+        })();
+    `);
+
+    assert(result.foundSection, 'the sampled overworld should include at least one additional dungeon chunk');
+    assert(result.returnedToSection, 'exiting an additional dungeon should return to its overworld chunk');
+    assert(result.markerPersisted, 'additional dungeons should save their floor progression independently');
+    assert(result.reenteredSameDungeon, 're-entering an additional dungeon should use the same dungeon identity');
+}
+
 function testOverworldSectionTravelAndPersistence() {
     const result = run(`
         (function() {
             if (Game.state.area !== 'overworld') {
                 Game.Systems.World.exitDungeon();
             }
+            Game.Systems.World.loadOverworldSection({x: 0, y: 0});
 
             Game.world.dungeonGrid[1][1] = Tile.specialFloor([4, 5, 6]);
 
@@ -665,6 +889,10 @@ testStairsReachable();
 testTurnProcessing();
 testDungeonEntryAndExit();
 testDungeonBacktrackingAndPersistence();
+testDungeonMaxDepthMatchesEntryLevel();
+testDungeonStairsRespectMaxDepth();
+testOldDungeonDepthDoesNotIncreaseAfterLevelUp();
+testAdditionalDungeonEntrancePersistence();
 testOverworldSectionTravelAndPersistence();
 testOverworldWaterAndBridgeShapes();
 testCombatDamageEvent();

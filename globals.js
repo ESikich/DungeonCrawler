@@ -40,6 +40,8 @@ const Game = {
         overworldTransition: null,
         overworldSeed: 0,
         dungeonLevels: {},
+        dungeons: {},
+        activeDungeonId: null,
         rooms: [],
         playerEid: null,
         messages: [],
@@ -55,6 +57,8 @@ const Game = {
             this.overworldTransition = null;
             this.overworldSeed = Math.floor(Math.random() * 1000000000);
             this.dungeonLevels = {};
+            this.dungeons = {};
+            this.activeDungeonId = null;
             this.rooms = [];
             this.playerEid = null;
             this.messages = [];
