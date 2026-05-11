@@ -203,6 +203,37 @@ function testTurnProcessing() {
     assert(result.playerExists, 'player should still exist after processing a turn');
 }
 
+function testOverworldMapToggle() {
+    const result = run(`
+        (function() {
+            if (Game.state.area !== 'overworld') {
+                Game.Systems.World.exitDungeon();
+            }
+
+            Game.Controller.handleMapToggle();
+            const openedInOverworld = Game.state.uiMode === 'map';
+            const savedCurrentSection = !!Game.world.overworldSections[overworldSectionKey(Game.world.overworldSection)];
+
+            Game.Controller.handleMapToggle();
+            const closed = Game.state.uiMode === 'game';
+
+            const prog = Game.ECS.getComponent(Game.world.playerEid, 'progress');
+            prog.level = Math.max(prog.level, 2);
+            Game.Systems.World.enterDungeon();
+            Game.Controller.handleMapToggle();
+            const blockedInDungeon = Game.state.uiMode === 'game';
+            Game.Systems.World.exitDungeon();
+
+            return {openedInOverworld, savedCurrentSection, closed, blockedInDungeon};
+        })();
+    `);
+
+    assert(result.openedInOverworld, 'map should open while in the overworld');
+    assert(result.savedCurrentSection, 'opening map should save the current visited chunk');
+    assert(result.closed, 'map should close back to game mode');
+    assert(result.blockedInDungeon, 'map should not open inside a dungeon');
+}
+
 function testDungeonEntryAndExit() {
     const result = run(`
         (function() {
@@ -887,6 +918,7 @@ testGeneratedDungeon();
 testOverworldSeedChangesBetweenGames();
 testStairsReachable();
 testTurnProcessing();
+testOverworldMapToggle();
 testDungeonEntryAndExit();
 testDungeonBacktrackingAndPersistence();
 testDungeonMaxDepthMatchesEntryLevel();

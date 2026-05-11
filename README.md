@@ -16,6 +16,7 @@ Then open `http://localhost:8080`. Running through localhost lets image tiles an
 
 - `WASD` or arrow keys: move
 - `I`: inventory
+- `M`: overworld map
 - `Enter` or `Space`: use selected inventory item
 - `D`: drop selected inventory item
 - `R`: restart

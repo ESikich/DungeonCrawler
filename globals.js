@@ -17,7 +17,7 @@ const Game = {
     // --- Game State ---
     state: {
         current: 'start', // 'start', 'playing', 'paused', 'gameOver'
-        uiMode: 'game',   // 'game', 'inventory'
+        uiMode: 'game',   // 'game', 'inventory', 'map'
         invSelIndex: 0,
         turnCount: 0,
         gameOver: false,

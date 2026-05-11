@@ -59,6 +59,31 @@ Game.Renderer = (function() {
         return true;
     }
 
+    function getMapTileColor(tile) {
+        if (!tile) return '#050608';
+
+        switch (tile.special) {
+            case 'dungeonEntrance': return '#f6d365';
+            case 'tree': return '#0f4f26';
+            case 'rock': return '#77736b';
+            case 'bridge': return '#9a632f';
+            case 'sand': return '#c2aa65';
+            case 'water': return tile.walkable ? '#48a7d8' : '#135ea8';
+            case 'ocean': return tile.walkable ? '#45a4c8' : '#082f70';
+            default: break;
+        }
+
+        if (tile.glyph === '<' || tile.glyph === '>') return '#f6d365';
+        if (!tile.walkable) return '#33343a';
+        return `rgb(${tile.color.join(',')})`;
+    }
+
+    function parseSectionKey(key) {
+        const parts = key.split(',').map(Number);
+        if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null;
+        return {x: parts[0], y: parts[1]};
+    }
+
     function getActiveEffects(status) {
         if (!status) return [];
 
@@ -161,6 +186,8 @@ Game.Renderer = (function() {
             // Overlays
             if (gameState.uiMode === 'inventory') {
                 this.renderInventoryOverlay(gameState, playerEid);
+            } else if (gameState.uiMode === 'map') {
+                this.renderOverworldMapOverlay(gameState, world);
             }
             if (gameState.current === 'paused') {
                 this.renderMenuOverlay(gameState, playerEid);
@@ -653,6 +680,105 @@ Game.Renderer = (function() {
                 const displayDesc = desc.length > maxChars ? desc.substring(0, maxChars - 3) + '...' : desc;
                 ctx.fillText(displayDesc, x, detailsY);
             }
+        },
+
+        renderOverworldMapOverlay(gameState, world) {
+            ctx.fillStyle = 'rgba(0,0,0,0.82)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const entries = [];
+            const sections = world.overworldSections || {};
+            for (const key in sections) {
+                const section = parseSectionKey(key);
+                const grid = sections[key];
+                if (!section || !grid || grid.length === 0) continue;
+                entries.push({key: key, section: section, grid: grid});
+            }
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.font = '28px monospace';
+            ctx.fillStyle = '#f4f4f4';
+            ctx.fillText('Overworld Map', canvas.width / 2, 24);
+
+            if (entries.length === 0) {
+                ctx.font = '20px monospace';
+                ctx.fillStyle = '#aaa';
+                ctx.fillText('No visited chunks', canvas.width / 2, 82);
+                return;
+            }
+
+            let minX = entries[0].section.x;
+            let maxX = entries[0].section.x;
+            let minY = entries[0].section.y;
+            let maxY = entries[0].section.y;
+            for (let i = 1; i < entries.length; i++) {
+                minX = Math.min(minX, entries[i].section.x);
+                maxX = Math.max(maxX, entries[i].section.x);
+                minY = Math.min(minY, entries[i].section.y);
+                maxY = Math.max(maxY, entries[i].section.y);
+            }
+
+            const chunkCols = maxX - minX + 1;
+            const chunkRows = maxY - minY + 1;
+            const tileW = Game.config.DUNGEON_WIDTH;
+            const tileH = Game.config.DUNGEON_HEIGHT;
+            const gap = 4;
+            const maxMapWidth = canvas.width - 80;
+            const maxMapHeight = Math.max(120, canvas.height - 160);
+            const cellByWidth = Math.floor((maxMapWidth - gap * (chunkCols - 1)) / (chunkCols * tileW));
+            const cellByHeight = Math.floor((maxMapHeight - gap * (chunkRows - 1)) / (chunkRows * tileH));
+            const cellSize = Math.max(1, Math.min(8, cellByWidth, cellByHeight));
+            const chunkW = tileW * cellSize;
+            const chunkH = tileH * cellSize;
+            const mapW = chunkCols * chunkW + (chunkCols - 1) * gap;
+            const mapH = chunkRows * chunkH + (chunkRows - 1) * gap;
+            const originX = Math.floor((canvas.width - mapW) / 2);
+            const originY = Math.floor((canvas.height - mapH) / 2) + 14;
+            const current = world.overworldSection || {x: 0, y: 0};
+            const playerPos = Game.ECS.getComponent(world.playerEid, 'position');
+            const playerBlinkOn = Math.floor(Date.now() / 350) % 2 === 0;
+
+            for (let i = 0; i < entries.length; i++) {
+                const entry = entries[i];
+                const chunkX = originX + (entry.section.x - minX) * (chunkW + gap);
+                const chunkY = originY + (entry.section.y - minY) * (chunkH + gap);
+
+                for (let y = 0; y < tileH; y++) {
+                    for (let x = 0; x < tileW; x++) {
+                        ctx.fillStyle = getMapTileColor(entry.grid[y] && entry.grid[y][x]);
+                        ctx.fillRect(chunkX + x * cellSize, chunkY + y * cellSize, cellSize, cellSize);
+                    }
+                }
+
+                for (let y = 0; y < tileH; y++) {
+                    for (let x = 0; x < tileW; x++) {
+                        const tile = entry.grid[y] && entry.grid[y][x];
+                        if (!tile || tile.special !== 'dungeonEntrance') continue;
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(chunkX + x * cellSize, chunkY + y * cellSize, cellSize, cellSize);
+                    }
+                }
+
+                if (playerBlinkOn && playerPos &&
+                    entry.section.x === current.x && entry.section.y === current.y) {
+                    const markerSize = Math.max(cellSize, 3);
+                    const markerX = chunkX + playerPos.x * cellSize + Math.floor((cellSize - markerSize) / 2);
+                    const markerY = chunkY + playerPos.y * cellSize + Math.floor((cellSize - markerSize) / 2);
+                    ctx.fillStyle = '#ff1f1f';
+                    ctx.fillRect(markerX, markerY, markerSize, markerSize);
+                }
+
+                ctx.strokeStyle = entry.section.x === current.x && entry.section.y === current.y ? '#ffffff' : 'rgba(160,160,180,0.55)';
+                ctx.lineWidth = entry.section.x === current.x && entry.section.y === current.y ? 2 : 1;
+                ctx.strokeRect(chunkX - 1, chunkY - 1, chunkW + 2, chunkH + 2);
+            }
+
+            ctx.font = '16px monospace';
+            ctx.fillStyle = '#ccc';
+            ctx.textAlign = 'center';
+            ctx.fillText('M/Esc: close', canvas.width / 2, canvas.height - 34);
+            ctx.textAlign = 'left';
         },
         
         renderMenuOverlay(gameState, playerEid) {

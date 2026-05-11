@@ -118,6 +118,21 @@ Game.Controller = (function() {
                 Game.state.invSelIndex = 0;
             }
         },
+
+        handleMapToggle() {
+            if (Game.state.uiMode === 'map') {
+                Game.state.uiMode = 'game';
+                return;
+            }
+
+            if (Game.state.area !== 'overworld') {
+                messageSystem.add('You can only check the map in the overworld.');
+                return;
+            }
+
+            systems.World.saveCurrentOverworldSection();
+            Game.state.uiMode = 'map';
+        },
         
         handleInventorySelect(direction) {
             const inv = ecs.getComponent(Game.world.playerEid, 'inventory');
@@ -243,6 +258,11 @@ Game.InputHandler = function(gameController) {
                 return;
             }
 
+            if (Game.state.uiMode === 'map') {
+                this.handleMapInput(key, e);
+                return;
+            }
+
             // Game mode
             this.handleGameInput(key, e);
         });
@@ -297,6 +317,13 @@ Game.InputHandler = function(gameController) {
         }
         e.preventDefault();
     };
+
+    this.handleMapInput = function(key, e) {
+        if (key === 'm' || key === 'M' || key === 'Escape') {
+            this.controller.handleMapToggle();
+        }
+        e.preventDefault();
+    };
     
     this.handleGameInput = function(key, e) {
         let dx = 0, dy = 0;
@@ -315,6 +342,10 @@ Game.InputHandler = function(gameController) {
             case 'i': case 'I': 
                 this.controller.handleInventoryToggle(); 
                 e.preventDefault(); 
+                return;
+            case 'm': case 'M':
+                this.controller.handleMapToggle();
+                e.preventDefault();
                 return;
             case 'r': case 'R': 
                 this.controller.resetGame(); 

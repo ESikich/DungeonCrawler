@@ -161,7 +161,8 @@ Game.HUD = (function() {
             ctx.fillStyle = COLORS.textDim;
             ctx.fillText('WASD MOVE', x, y);
             ctx.fillText('I INVENTORY', x + width * 0.34, y);
-            ctx.fillText('ESC MENU', x + width * 0.68, y);
+            ctx.fillText('M MAP', x + width * 0.61, y);
+            ctx.fillText('ESC MENU', x + width * 0.78, y);
         },
 
         renderUpdates(ctx, x, y, width, messages, bottomY) {
