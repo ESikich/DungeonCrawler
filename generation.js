@@ -21,11 +21,11 @@ Tile.floor = function() {
 };
 
 Tile.stairs = function() {
-    return new Tile(true, false, [255, 215, 0], '>');
+    return new Tile(true, false, [50, 50, 50], '>', 'dungeonEntrance');
 };
 
 Tile.upStairs = function() {
-    return new Tile(true, false, [255, 215, 0], '<');
+    return new Tile(true, false, [50, 50, 50], '<', 'dungeonExit');
 };
 
 Tile.grass = function() {

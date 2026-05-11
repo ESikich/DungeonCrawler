@@ -92,6 +92,8 @@ Game.Renderer = (function() {
             loadTileImage('tree', 'tiles/tree.png');
             loadTileImage('rock', 'tiles/rock.png');
             loadTileImage('sand', 'tiles/sand.png');
+            loadTileImage('dungeonEntrance', 'tiles/dungeonEntrance.png');
+            loadTileImage('dungeonExit', 'tiles/dungeonExit.png');
             
             return true;
         },
