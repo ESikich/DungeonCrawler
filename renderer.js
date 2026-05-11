@@ -719,8 +719,33 @@ Game.Renderer = (function() {
                 maxY = Math.max(maxY, entries[i].section.y);
             }
 
-            const chunkCols = maxX - minX + 1;
-            const chunkRows = maxY - minY + 1;
+            const maxVisibleChunks = 6;
+            const current = world.overworldSection || {x: 0, y: 0};
+            const view = gameState.mapView || {x: minX, y: minY};
+            let displayView = {x: view.x, y: view.y};
+            const transition = gameState.mapTransition;
+            if (transition && transition.from && transition.to) {
+                const elapsed = Date.now() - transition.startTime;
+                const progress = Math.min(1, elapsed / transition.duration);
+                const eased = progress * progress * (3 - 2 * progress);
+                displayView = {
+                    x: transition.from.x + (transition.to.x - transition.from.x) * eased,
+                    y: transition.from.y + (transition.to.y - transition.from.y) * eased
+                };
+                if (progress >= 1) {
+                    gameState.mapTransition = null;
+                }
+            }
+            const viewMinX = view.x;
+            const viewMinY = view.y;
+            const viewMaxX = Math.min(maxX, viewMinX + maxVisibleChunks - 1);
+            const viewMaxY = Math.min(maxY, viewMinY + maxVisibleChunks - 1);
+            const visibleEntries = entries.filter(function(entry) {
+                return entry.section.x >= viewMinX - 1 && entry.section.x <= viewMaxX + 1 &&
+                    entry.section.y >= viewMinY - 1 && entry.section.y <= viewMaxY + 1;
+            });
+            const chunkCols = viewMaxX - viewMinX + 1;
+            const chunkRows = viewMaxY - viewMinY + 1;
             const tileW = Game.config.DUNGEON_WIDTH;
             const tileH = Game.config.DUNGEON_HEIGHT;
             const gap = 4;
@@ -735,14 +760,15 @@ Game.Renderer = (function() {
             const mapH = chunkRows * chunkH + (chunkRows - 1) * gap;
             const originX = Math.floor((canvas.width - mapW) / 2);
             const originY = Math.floor((canvas.height - mapH) / 2) + 14;
-            const current = world.overworldSection || {x: 0, y: 0};
+            const slideX = (view.x - displayView.x) * (chunkW + gap);
+            const slideY = (view.y - displayView.y) * (chunkH + gap);
             const playerPos = Game.ECS.getComponent(world.playerEid, 'position');
             const playerBlinkOn = Math.floor(Date.now() / 350) % 2 === 0;
 
-            for (let i = 0; i < entries.length; i++) {
-                const entry = entries[i];
-                const chunkX = originX + (entry.section.x - minX) * (chunkW + gap);
-                const chunkY = originY + (entry.section.y - minY) * (chunkH + gap);
+            for (let i = 0; i < visibleEntries.length; i++) {
+                const entry = visibleEntries[i];
+                const chunkX = originX + (entry.section.x - viewMinX) * (chunkW + gap) + slideX;
+                const chunkY = originY + (entry.section.y - viewMinY) * (chunkH + gap) + slideY;
 
                 for (let y = 0; y < tileH; y++) {
                     for (let x = 0; x < tileW; x++) {
@@ -777,7 +803,7 @@ Game.Renderer = (function() {
             ctx.font = '16px monospace';
             ctx.fillStyle = '#ccc';
             ctx.textAlign = 'center';
-            ctx.fillText('M/Esc: close', canvas.width / 2, canvas.height - 34);
+            ctx.fillText('Arrows/WASD: scroll   M/Esc: close', canvas.width / 2, canvas.height - 34);
             ctx.textAlign = 'left';
         },
         

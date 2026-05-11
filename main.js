@@ -122,6 +122,7 @@ Game.Controller = (function() {
         handleMapToggle() {
             if (Game.state.uiMode === 'map') {
                 Game.state.uiMode = 'game';
+                Game.state.mapTransition = null;
                 return;
             }
 
@@ -131,7 +132,82 @@ Game.Controller = (function() {
             }
 
             systems.World.saveCurrentOverworldSection();
+            const bounds = this.getVisitedMapBounds();
+            Game.state.mapView = this.getMapViewportForCenter(Game.world.overworldSection, bounds);
+            Game.state.mapTransition = null;
             Game.state.uiMode = 'map';
+        },
+
+        getMapViewportForCenter(center, bounds) {
+            const maxVisibleChunks = 6;
+            const visitedWidth = bounds.maxX - bounds.minX + 1;
+            const visitedHeight = bounds.maxY - bounds.minY + 1;
+            let x = Math.floor(center.x - (maxVisibleChunks - 1) / 2);
+            let y = Math.floor(center.y - (maxVisibleChunks - 1) / 2);
+
+            if (visitedWidth <= maxVisibleChunks) {
+                x = bounds.minX;
+            } else {
+                x = Math.min(Math.max(x, bounds.minX), bounds.maxX - maxVisibleChunks + 1);
+            }
+
+            if (visitedHeight <= maxVisibleChunks) {
+                y = bounds.minY;
+            } else {
+                y = Math.min(Math.max(y, bounds.minY), bounds.maxY - maxVisibleChunks + 1);
+            }
+
+            return {x: x, y: y};
+        },
+
+        getVisitedMapBounds() {
+            const sections = Game.world.overworldSections || {};
+            let bounds = null;
+
+            for (const key in sections) {
+                const parts = key.split(',').map(Number);
+                if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) continue;
+
+                if (!bounds) {
+                    bounds = {minX: parts[0], maxX: parts[0], minY: parts[1], maxY: parts[1]};
+                } else {
+                    bounds.minX = Math.min(bounds.minX, parts[0]);
+                    bounds.maxX = Math.max(bounds.maxX, parts[0]);
+                    bounds.minY = Math.min(bounds.minY, parts[1]);
+                    bounds.maxY = Math.max(bounds.maxY, parts[1]);
+                }
+            }
+
+            return bounds || {
+                minX: Game.world.overworldSection.x,
+                maxX: Game.world.overworldSection.x,
+                minY: Game.world.overworldSection.y,
+                maxY: Game.world.overworldSection.y
+            };
+        },
+
+        handleMapPan(dx, dy) {
+            const bounds = this.getVisitedMapBounds();
+            const maxVisibleChunks = 6;
+            const view = Game.state.mapView || this.getMapViewportForCenter(Game.world.overworldSection, bounds);
+            const maxViewX = Math.max(bounds.minX, bounds.maxX - maxVisibleChunks + 1);
+            const maxViewY = Math.max(bounds.minY, bounds.maxY - maxVisibleChunks + 1);
+            const nextView = {
+                x: Math.min(Math.max(view.x + dx, bounds.minX), maxViewX),
+                y: Math.min(Math.max(view.y + dy, bounds.minY), maxViewY)
+            };
+
+            if (nextView.x === view.x && nextView.y === view.y) {
+                return;
+            }
+
+            Game.state.mapTransition = {
+                from: {x: view.x, y: view.y},
+                to: {x: nextView.x, y: nextView.y},
+                startTime: Date.now(),
+                duration: 260
+            };
+            Game.state.mapView = nextView;
         },
         
         handleInventorySelect(direction) {
@@ -184,6 +260,8 @@ Game.Controller = (function() {
             Game.state.floor = 0;
             Game.state.justDescended = false;
             Game.state.area = 'overworld';
+            Game.state.mapView = { x: 0, y: 0 };
+            Game.state.mapTransition = null;
             
             // Ensure explosions array is initialized
             Game.effects.explosions = [];
@@ -319,6 +397,25 @@ Game.InputHandler = function(gameController) {
     };
 
     this.handleMapInput = function(key, e) {
+        switch (key) {
+            case 'ArrowUp': case 'w': case 'W':
+                this.controller.handleMapPan(0, -1);
+                e.preventDefault();
+                return;
+            case 'ArrowDown': case 's': case 'S':
+                this.controller.handleMapPan(0, 1);
+                e.preventDefault();
+                return;
+            case 'ArrowLeft': case 'a': case 'A':
+                this.controller.handleMapPan(-1, 0);
+                e.preventDefault();
+                return;
+            case 'ArrowRight': case 'd': case 'D':
+                this.controller.handleMapPan(1, 0);
+                e.preventDefault();
+                return;
+        }
+
         if (key === 'm' || key === 'M' || key === 'Escape') {
             this.controller.handleMapToggle();
         }

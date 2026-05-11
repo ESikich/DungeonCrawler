@@ -28,7 +28,9 @@ const Game = {
         area: 'overworld',
         speedActionCount: 0,
         goldMultiplier: 1,
-        xpMultiplier: 1
+        xpMultiplier: 1,
+        mapView: { x: 0, y: 0 },
+        mapTransition: null
     },
 
     // --- World Data ---
@@ -195,6 +197,8 @@ const Game = {
         this.state.speedActionCount = 0;
         this.state.goldMultiplier = 1;
         this.state.xpMultiplier = 1;
+        this.state.mapView = { x: 0, y: 0 };
+        this.state.mapTransition = null;
 
         this.effects.explosions = [];
         this.events.clearSession();

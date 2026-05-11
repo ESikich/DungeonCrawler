@@ -213,6 +213,18 @@ function testOverworldMapToggle() {
             Game.Controller.handleMapToggle();
             const openedInOverworld = Game.state.uiMode === 'map';
             const savedCurrentSection = !!Game.world.overworldSections[overworldSectionKey(Game.world.overworldSection)];
+            for (let sx = 1; sx <= 7; sx++) {
+                Game.world.overworldSections[sx + ',0'] = Game.Systems.World.cloneGrid(Game.world.dungeonGrid);
+            }
+            Game.Controller.handleMapPan(1, 0);
+            const pannedEast = Game.state.mapView.x === 1 && Game.state.mapView.y === 0;
+            const startedSmoothPan = !!Game.state.mapTransition &&
+                Game.state.mapTransition.from.x === 0 &&
+                Game.state.mapTransition.to.x === 1;
+            Game.Controller.handleMapPan(10, 0);
+            const clampedEast = Game.state.mapView.x === 2;
+            Game.Controller.handleMapPan(-10, 0);
+            const clampedWest = Game.state.mapView.x === 0;
 
             Game.Controller.handleMapToggle();
             const closed = Game.state.uiMode === 'game';
@@ -224,12 +236,16 @@ function testOverworldMapToggle() {
             const blockedInDungeon = Game.state.uiMode === 'game';
             Game.Systems.World.exitDungeon();
 
-            return {openedInOverworld, savedCurrentSection, closed, blockedInDungeon};
+            return {openedInOverworld, savedCurrentSection, pannedEast, startedSmoothPan, clampedEast, clampedWest, closed, blockedInDungeon};
         })();
     `);
 
     assert(result.openedInOverworld, 'map should open while in the overworld');
     assert(result.savedCurrentSection, 'opening map should save the current visited chunk');
+    assert(result.pannedEast, 'map pan should move the viewport across visited chunks');
+    assert(result.startedSmoothPan, 'map pan should start a smooth viewport transition');
+    assert(result.clampedEast, 'map pan should clamp to the east edge of visited chunks');
+    assert(result.clampedWest, 'map pan should clamp to the west edge of visited chunks');
     assert(result.closed, 'map should close back to game mode');
     assert(result.blockedInDungeon, 'map should not open inside a dungeon');
 }
