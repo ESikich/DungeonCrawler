@@ -127,7 +127,7 @@ const MonsterBehaviors = {
 const MonsterRegistry = {
     // === ORIGINAL MONSTERS ===
     'slime': {
-        name: 'Green Slime', glyph: 's', color: 'green',
+        name: 'Green Slime', glyph: 's', color: 'green', sprite: 'slime',
         health: {hp: 15, maxHp: 15},
         stats: {strength: 8, agility: 6, accuracy: 5, evasion: 2},
         behavior: 'random',
@@ -142,7 +142,7 @@ const MonsterRegistry = {
     },
 
     'orc': {
-        name: 'Orc Warrior', glyph: 'o', color: 'red',
+        name: 'Orc Warrior', glyph: 'o', color: 'red', sprite: 'orcWarrior',
         health: {hp: 25, maxHp: 25},
         stats: {strength: 12, agility: 8, accuracy: 8, evasion: 4},
         behavior: 'chase',
@@ -158,7 +158,7 @@ const MonsterRegistry = {
     },
 
     'goblin': {
-        name: 'Goblin', glyph: 'g', color: 'brown',
+        name: 'Goblin', glyph: 'g', color: 'brown', sprite: 'goblin',
         health: {hp: 12, maxHp: 12},
         stats: {strength: 6, agility: 12, accuracy: 7, evasion: 6},
         behavior: 'chase',
@@ -175,7 +175,7 @@ const MonsterRegistry = {
 
     // === NEW MONSTERS (examples) ===
     'rat': {
-        name: 'Giant Rat', glyph: 'r', color: 'brown',
+        name: 'Giant Rat', glyph: 'r', color: 'brown', sprite: 'giantRat',
         health: {hp: 8, maxHp: 8},
         stats: {strength: 4, agility: 10, accuracy: 6, evasion: 7},
         behavior: 'cautious',
@@ -188,7 +188,7 @@ const MonsterRegistry = {
     },
 
     'berserker': {
-        name: 'Berserker', glyph: 'B', color: 'red',
+        name: 'Berserker', glyph: 'B', color: 'red', sprite: 'berserker',
         health: {hp: 35, maxHp: 35},
         stats: {strength: 16, agility: 6, accuracy: 9, evasion: 2},
         behavior: 'aggressive',
@@ -279,9 +279,18 @@ function registerMonster(id, monsterData) {
 }
 
 // Example of how easy it is to add new monsters:
-registerMonster('skeleton', MonsterHelpers.meleeMonster('Skeleton Warrior', 18, 10, 7, 6, 3, 'S', 'white', 10));
-registerMonster('spider', MonsterHelpers.cautiousMonster('Giant Spider', 10, 6, 14, 8, 9, 'x', 'purple', 6));
-registerMonster('troll', MonsterHelpers.meleeMonster('Cave Troll', 45, 18, 4, 10, 1, 'T', 'green', 25, 0.9));
+registerMonster('skeleton', Object.assign(
+    MonsterHelpers.meleeMonster('Skeleton Warrior', 18, 10, 7, 6, 3, 'S', 'white', 10),
+    {sprite: 'skeletonWarrior'}
+));
+registerMonster('spider', Object.assign(
+    MonsterHelpers.cautiousMonster('Giant Spider', 10, 6, 14, 8, 9, 'x', 'purple', 6),
+    {sprite: 'giantSpider'}
+));
+registerMonster('troll', Object.assign(
+    MonsterHelpers.meleeMonster('Cave Troll', 45, 18, 4, 10, 1, 'T', 'green', 25, 0.9),
+    {sprite: 'caveTroll'}
+));
 
 /**
  * Get monster data definition for a given monster type
@@ -362,12 +371,13 @@ function createMonsterFromData(data, x, y, ecs = Game.ECS) {
     ecs.addComponent(eid, 'descriptor', {
         name: scaledData.name,
         glyph: scaledData.glyph,
-        color: scaledData.color
+        color: scaledData.color,
+        sprite: scaledData.sprite
     });
 
     // Add all other components from the scaled monster data
     for (const [componentType, componentData] of Object.entries(scaledData)) {
-        if (componentType !== 'name' && componentType !== 'glyph' && componentType !== 'color' && componentType !== 'behavior') {
+        if (componentType !== 'name' && componentType !== 'glyph' && componentType !== 'color' && componentType !== 'sprite' && componentType !== 'behavior') {
             ecs.addComponent(eid, componentType, JSON.parse(JSON.stringify(componentData)));
         }
     }
@@ -378,7 +388,8 @@ function createMonsterFromData(data, x, y, ecs = Game.ECS) {
         descriptor: {
             name: scaledData.name,
             glyph: scaledData.glyph,
-            color: scaledData.color
+            color: scaledData.color,
+            sprite: scaledData.sprite
         },
         behavior: scaledData.behavior || 'chase'
     });

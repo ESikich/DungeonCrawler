@@ -51,6 +51,14 @@ Game.Renderer = (function() {
         return true;
     }
 
+    function renderEntityImage(desc, x, y) {
+        const image = desc.sprite ? tileImages[desc.sprite] : null;
+        if (!image || !image.complete || image.naturalWidth === 0) return false;
+
+        ctx.drawImage(image, x, y, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
+        return true;
+    }
+
     function getActiveEffects(status) {
         if (!status) return [];
 
@@ -94,6 +102,14 @@ Game.Renderer = (function() {
             loadTileImage('sand', 'tiles/sand.png');
             loadTileImage('dungeonEntrance', 'tiles/dungeonEntrance.png');
             loadTileImage('dungeonExit', 'tiles/dungeonExit.png');
+            loadTileImage('slime', 'tiles/slime.png');
+            loadTileImage('orcWarrior', 'tiles/orcWarrior.png');
+            loadTileImage('goblin', 'tiles/goblin.png');
+            loadTileImage('giantRat', 'tiles/giantRat.png');
+            loadTileImage('berserker', 'tiles/berserker.png');
+            loadTileImage('skeletonWarrior', 'tiles/skeletonWarrior.png');
+            loadTileImage('giantSpider', 'tiles/giantSpider.png');
+            loadTileImage('caveTroll', 'tiles/caveTroll.png');
             
             return true;
         },
@@ -286,12 +302,14 @@ Game.Renderer = (function() {
                 ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
             }
             
-            // Render entity glyph
-            ctx.font = `${Game.config.TILE_SIZE - 2}px monospace`;
-            ctx.fillStyle = `rgb(${color.join(',')})`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(desc.glyph, screenX + Game.config.TILE_SIZE / 2, screenY + Game.config.TILE_SIZE / 2);
+            if (!renderEntityImage(desc, screenX, screenY)) {
+                // Render entity glyph
+                ctx.font = `${Game.config.TILE_SIZE - 2}px monospace`;
+                ctx.fillStyle = `rgb(${color.join(',')})`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(desc.glyph, screenX + Game.config.TILE_SIZE / 2, screenY + Game.config.TILE_SIZE / 2);
+            }
             
             // Health bar for damaged non-player entities
             if (hp && hp.hp < hp.maxHp && desc.glyph !== '@') {
