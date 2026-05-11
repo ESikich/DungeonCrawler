@@ -306,8 +306,326 @@ function overworldRange(section, salt, min, max) {
     return Math.floor(overworldRandom(section, salt) * (max - min + 1)) + min;
 }
 
+function overworldWorldX(section, x) {
+    return section.x * Game.config.DUNGEON_WIDTH + x;
+}
+
+function overworldWorldY(section, y) {
+    return section.y * Game.config.DUNGEON_HEIGHT + y;
+}
+
+function overworldWorldNoise(worldX, worldY, salt) {
+    const seed = Game.world.overworldSeed || 1;
+    const n = Math.sin(seed + (worldX * 197) + (worldY * 389) + salt) * 10000;
+    return n - Math.floor(n);
+}
+
+function overworldField(worldX, worldY, salt) {
+    const seed = (Game.world.overworldSeed || 1) * 0.00001;
+    const value =
+        Math.sin(seed + salt * 1.73 + worldX * 0.071 + worldY * 0.043) +
+        Math.sin(seed * 1.7 + salt * 2.31 - worldX * 0.046 + worldY * 0.083) * 0.62 +
+        Math.sin(seed * 2.3 + salt * 3.19 + worldX * 0.137 - worldY * 0.108) * 0.34;
+    return Math.max(0, Math.min(1, (value / 1.96 + 1) / 2));
+}
+
+function seededUnit(a, b, salt) {
+    const seed = Game.world.overworldSeed || 1;
+    const n = Math.sin(seed + a * 127.1 + b * 311.7 + salt * 74.7) * 10000;
+    return n - Math.floor(n);
+}
+
+function seededRange(a, b, salt, min, max) {
+    return min + seededUnit(a, b, salt) * (max - min);
+}
+
 function applyOverworldTile(x, y, tile) {
     if (inBounds(x, y)) Game.world.dungeonGrid[y][x] = tile;
+}
+
+function paintRegionalOverworldTerrain(section) {
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            const tile = Game.world.dungeonGrid[y][x];
+            if (!tile || tile.special === 'water' || tile.special === 'ocean' || tile.special === 'bridge') continue;
+
+            const worldX = overworldWorldX(section, x);
+            const worldY = overworldWorldY(section, y);
+            const forest = overworldField(worldX, worldY, 41);
+            const ridge = overworldField(worldX, worldY, 87);
+            const detail = overworldWorldNoise(worldX, worldY, 113);
+
+            if (ridge > 0.8 && forest < 0.72 && detail > 0.28) {
+                applyOverworldTile(x, y, Tile.rock());
+            } else if (forest > 0.61 && detail > 0.16) {
+                applyOverworldTile(x, y, Tile.tree());
+            } else if (forest > 0.52 && detail > 0.52) {
+                applyOverworldTile(x, y, Tile.darkGrass());
+            } else if (forest < 0.28 || ridge > 0.67) {
+                applyOverworldTile(x, y, Tile.lightGrass());
+            } else {
+                applyOverworldTile(x, y, Tile.grass());
+            }
+        }
+    }
+}
+
+function regionalWaterCellSize() {
+    return {
+        width: Game.config.DUNGEON_WIDTH * 8,
+        height: Game.config.DUNGEON_HEIGHT * 8
+    };
+}
+
+function regionalRiverCellSize() {
+    return {
+        width: Game.config.DUNGEON_WIDTH * 4,
+        height: Game.config.DUNGEON_HEIGHT * 4
+    };
+}
+
+function makeRegionalWaterFeature(regionX, regionY) {
+    if (seededUnit(regionX, regionY, 700) < 0.38) return null;
+
+    const size = regionalWaterCellSize();
+    const cx = regionX * size.width + seededRange(regionX, regionY, 701, size.width * 0.16, size.width * 0.84);
+    const cy = regionY * size.height + seededRange(regionX, regionY, 702, size.height * 0.16, size.height * 0.84);
+    const huge = seededUnit(regionX, regionY, 703) > 0.74;
+    const radiusX = huge
+        ? seededRange(regionX, regionY, 704, size.width * 0.34, size.width * 0.68)
+        : seededRange(regionX, regionY, 704, size.width * 0.16, size.width * 0.34);
+    const radiusY = huge
+        ? seededRange(regionX, regionY, 705, size.height * 0.34, size.height * 0.72)
+        : seededRange(regionX, regionY, 705, size.height * 0.16, size.height * 0.38);
+    const angle = seededRange(regionX, regionY, 706, 0, Math.PI);
+
+    const sourceAngle = seededRange(regionX, regionY, 707, 0, Math.PI * 2);
+    const sourceDistance = seededRange(regionX, regionY, 708, size.width * 0.56, size.width * 1.05);
+    const source = {
+        x: cx + Math.cos(sourceAngle) * sourceDistance,
+        y: cy + Math.sin(sourceAngle) * sourceDistance * 0.72
+    };
+    const mouthAngle = sourceAngle + Math.PI + seededRange(regionX, regionY, 709, -0.55, 0.55);
+    const mouth = {
+        x: cx + Math.cos(mouthAngle) * radiusX * 0.85,
+        y: cy + Math.sin(mouthAngle) * radiusY * 0.85
+    };
+    const bend = seededRange(regionX, regionY, 710, -0.48, 0.48);
+    const mid = {
+        x: (source.x + mouth.x) / 2 + Math.cos(sourceAngle + Math.PI / 2) * size.width * bend,
+        y: (source.y + mouth.y) / 2 + Math.sin(sourceAngle + Math.PI / 2) * size.height * bend
+    };
+
+    return {
+        regionX: regionX,
+        regionY: regionY,
+        cx: cx,
+        cy: cy,
+        radiusX: radiusX,
+        radiusY: radiusY,
+        angle: angle,
+        huge: huge,
+        source: source,
+        mouth: mouth,
+        mid: mid,
+        riverWidth: huge ? 2.2 : 1.7
+    };
+}
+
+function regionalWaterFeaturesNearSection(section) {
+    const size = regionalWaterCellSize();
+    const centerX = overworldWorldX(section, Math.floor(Game.config.DUNGEON_WIDTH / 2));
+    const centerY = overworldWorldY(section, Math.floor(Game.config.DUNGEON_HEIGHT / 2));
+    const baseRegionX = Math.floor(centerX / size.width);
+    const baseRegionY = Math.floor(centerY / size.height);
+    const features = [];
+
+    for (let ry = baseRegionY - 2; ry <= baseRegionY + 2; ry++) {
+        for (let rx = baseRegionX - 2; rx <= baseRegionX + 2; rx++) {
+            const feature = makeRegionalWaterFeature(rx, ry);
+            if (feature) features.push(feature);
+        }
+    }
+
+    return features;
+}
+
+function riverEdgePoint(regionX, regionY, edge, salt) {
+    const size = regionalRiverCellSize();
+    const left = regionX * size.width;
+    const top = regionY * size.height;
+    const padX = size.width * 0.12;
+    const padY = size.height * 0.12;
+
+    switch (edge) {
+        case 0:
+            return {
+                x: left + seededRange(regionX, regionY, salt, padX, size.width - padX),
+                y: top - size.height * 0.18
+            };
+        case 1:
+            return {
+                x: left + size.width * 1.18,
+                y: top + seededRange(regionX, regionY, salt, padY, size.height - padY)
+            };
+        case 2:
+            return {
+                x: left + seededRange(regionX, regionY, salt, padX, size.width - padX),
+                y: top + size.height * 1.18
+            };
+        default:
+            return {
+                x: left - size.width * 0.18,
+                y: top + seededRange(regionX, regionY, salt, padY, size.height - padY)
+            };
+    }
+}
+
+function makeRegionalRiverFeature(regionX, regionY) {
+    const size = regionalRiverCellSize();
+    const left = regionX * size.width;
+    const top = regionY * size.height;
+    const startEdge = Math.floor(seededUnit(regionX, regionY, 741) * 4);
+    let endEdge = Math.floor(seededUnit(regionX, regionY, 742) * 4);
+    if (endEdge === startEdge) endEdge = (startEdge + 2) % 4;
+    if (Math.abs(endEdge - startEdge) === 2 && seededUnit(regionX, regionY, 743) < 0.42) {
+        endEdge = (startEdge + (seededUnit(regionX, regionY, 744) < 0.5 ? 1 : 3)) % 4;
+    }
+
+    const start = riverEdgePoint(regionX, regionY, startEdge, 745);
+    const end = riverEdgePoint(regionX, regionY, endEdge, 746);
+    const points = [start];
+    const bendSide = seededUnit(regionX, regionY, 747) < 0.5 ? -1 : 1;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    const nx = -dy / len;
+    const ny = dx / len;
+
+    for (let i = 1; i <= 4; i++) {
+        const t = i / 5;
+        const wave = Math.sin(t * Math.PI) * seededRange(regionX, regionY, 750 + i, size.width * 0.1, size.width * 0.34);
+        points.push({
+            x: start.x + dx * t + nx * wave * bendSide + seededRange(regionX, regionY, 760 + i, -size.width * 0.08, size.width * 0.08),
+            y: start.y + dy * t + ny * wave * bendSide + seededRange(regionX, regionY, 770 + i, -size.height * 0.12, size.height * 0.12)
+        });
+    }
+    points.push(end);
+
+    return {
+        regionX: regionX,
+        regionY: regionY,
+        points: points,
+        width: seededRange(regionX, regionY, 780, 1.2, 2.5)
+    };
+}
+
+function regionalRiverFeaturesNearSection(section) {
+    const size = regionalRiverCellSize();
+    const centerX = overworldWorldX(section, Math.floor(Game.config.DUNGEON_WIDTH / 2));
+    const centerY = overworldWorldY(section, Math.floor(Game.config.DUNGEON_HEIGHT / 2));
+    const baseRegionX = Math.floor(centerX / size.width);
+    const baseRegionY = Math.floor(centerY / size.height);
+    const features = [];
+
+    for (let ry = baseRegionY - 1; ry <= baseRegionY + 1; ry++) {
+        for (let rx = baseRegionX - 1; rx <= baseRegionX + 1; rx++) {
+            const feature = makeRegionalRiverFeature(rx, ry);
+            if (feature) features.push(feature);
+        }
+    }
+
+    return features;
+}
+
+function basinValueAt(feature, worldX, worldY) {
+    const dx = worldX - feature.cx;
+    const dy = worldY - feature.cy;
+    const cos = Math.cos(feature.angle);
+    const sin = Math.sin(feature.angle);
+    const rx = dx * cos + dy * sin;
+    const ry = -dx * sin + dy * cos;
+    const warp =
+        (overworldField(worldX, worldY, 721 + feature.regionX * 13 + feature.regionY * 17) - 0.5) * 0.28 +
+        (overworldWorldNoise(Math.floor(worldX / 3), Math.floor(worldY / 3), 722) - 0.5) * 0.14;
+    return (rx * rx) / (feature.radiusX * feature.radiusX) +
+        (ry * ry) / (feature.radiusY * feature.radiusY) - warp;
+}
+
+function distanceToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) {
+        const sx = px - ax;
+        const sy = py - ay;
+        return Math.sqrt(sx * sx + sy * sy);
+    }
+
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    const cx = ax + t * dx;
+    const cy = ay + t * dy;
+    const sx = px - cx;
+    const sy = py - cy;
+    return Math.sqrt(sx * sx + sy * sy);
+}
+
+function riverDistanceAt(feature, worldX, worldY) {
+    const d1 = distanceToSegment(worldX, worldY, feature.source.x, feature.source.y, feature.mid.x, feature.mid.y);
+    const d2 = distanceToSegment(worldX, worldY, feature.mid.x, feature.mid.y, feature.mouth.x, feature.mouth.y);
+    return Math.min(d1, d2);
+}
+
+function riverPathDistanceAt(feature, worldX, worldY) {
+    let best = Infinity;
+    for (let i = 0; i < feature.points.length - 1; i++) {
+        const a = feature.points[i];
+        const b = feature.points[i + 1];
+        best = Math.min(best, distanceToSegment(worldX, worldY, a.x, a.y, b.x, b.y));
+    }
+    return best;
+}
+
+function paintRegionalWater(section) {
+    const basins = regionalWaterFeaturesNearSection(section);
+    const rivers = regionalRiverFeaturesNearSection(section);
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            const worldX = overworldWorldX(section, x);
+            const worldY = overworldWorldY(section, y);
+            let paintedWater = false;
+
+            for (let i = 0; i < basins.length; i++) {
+                const feature = basins[i];
+                if (basinValueAt(feature, worldX, worldY) <= 1) {
+                    applyOverworldTile(x, y, Tile.water());
+                    paintedWater = true;
+                    break;
+                }
+
+                const widthNoise = overworldField(worldX, worldY, 731 + feature.regionX * 19);
+                const width = feature.riverWidth + widthNoise * 1.15;
+                if (riverDistanceAt(feature, worldX, worldY) <= width) {
+                    applyOverworldTile(x, y, Tile.water());
+                    paintedWater = true;
+                    break;
+                }
+            }
+
+            if (paintedWater) continue;
+
+            for (let i = 0; i < rivers.length; i++) {
+                const feature = rivers[i];
+                const widthNoise = overworldField(worldX, worldY, 790 + feature.regionX * 23 + feature.regionY * 29);
+                const width = feature.width + widthNoise * 0.85;
+                if (riverPathDistanceAt(feature, worldX, worldY) <= width) {
+                    applyOverworldTile(x, y, Tile.water());
+                    break;
+                }
+            }
+        }
+    }
 }
 
 function growOverworldPatch(section, seeds, tileFactory, targetSize, salt, options) {
@@ -324,7 +642,7 @@ function growOverworldPatch(section, seeds, tileFactory, targetSize, salt, optio
         const key = current.x + ',' + current.y;
 
         if (!inBounds(current.x, current.y) || painted.has(key)) continue;
-        if (avoidWater && Game.world.dungeonGrid[current.y][current.x].special === 'water') continue;
+        if (avoidWater && isWaterLike(current.x, current.y)) continue;
 
         applyOverworldTile(current.x, current.y, tileFactory());
         painted.add(key);
@@ -937,44 +1255,14 @@ function applyWaterTones() {
     }
 }
 
-function paintHorizontalRiver(section, worldY, salt, width) {
-    const localBaseY = worldY - section.y * Game.config.DUNGEON_HEIGHT;
-    if (localBaseY < -6 || localBaseY > Game.config.DUNGEON_HEIGHT + 6) return;
-
-    for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
-        const worldX = section.x * Game.config.DUNGEON_WIDTH + x;
-        const meander = Math.round(Math.sin(worldX * 0.28 + salt) * 2 + Math.sin(worldX * 0.09 + salt * 0.7));
-        const riverY = localBaseY + meander;
-        for (let dy = -width; dy <= width; dy++) {
-            if (Math.abs(dy) === width && overworldNoise(section, x, riverY + dy, salt + 11) < 0.35) continue;
-            applyOverworldTile(x, riverY + dy, Tile.water());
-        }
-    }
-}
-
-function paintVerticalRiver(section, worldX, salt, width) {
-    const localBaseX = worldX - section.x * Game.config.DUNGEON_WIDTH;
-    if (localBaseX < -6 || localBaseX > Game.config.DUNGEON_WIDTH + 6) return;
-
-    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
-        const worldY = section.y * Game.config.DUNGEON_HEIGHT + y;
-        const meander = Math.round(Math.sin(worldY * 0.24 + salt) * 2 + Math.sin(worldY * 0.11 + salt * 0.5));
-        const riverX = localBaseX + meander;
-        for (let dx = -width; dx <= width; dx++) {
-            if (Math.abs(dx) === width && overworldNoise(section, riverX + dx, y, salt + 23) < 0.35) continue;
-            applyOverworldTile(riverX + dx, y, Tile.water());
-        }
-    }
-}
-
 function paintOcean(section) {
     const width = Game.config.DUNGEON_WIDTH;
     const height = Game.config.DUNGEON_HEIGHT;
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const worldX = section.x * width + x;
-            const worldY = section.y * height + y;
+            const worldX = overworldWorldX(section, x);
+            const worldY = overworldWorldY(section, y);
 
             const eastCoast = 92 + Math.round(Math.sin(worldY * 0.12) * 7) +
                 Math.round(Math.sin(worldY * 0.035 + 2.3) * 11);
@@ -1003,7 +1291,7 @@ function generateOverworldSection(section) {
     for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
         Game.world.dungeonGrid[y] = [];
         for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
-            const grassNoise = overworldNoise(section, x, y, 9);
+            const grassNoise = overworldField(overworldWorldX(section, x), overworldWorldY(section, y), 9);
             if (grassNoise < 0.22) {
                 Game.world.dungeonGrid[y][x] = Tile.darkGrass();
             } else if (grassNoise > 0.78) {
@@ -1015,15 +1303,13 @@ function generateOverworldSection(section) {
     }
 
     paintOcean(section);
-    paintHorizontalRiver(section, 5, 1.4, 1);
-    paintHorizontalRiver(section, 31, 3.1, 2);
-    paintVerticalRiver(section, -18, 2.2, 1);
-    paintVerticalRiver(section, 44, 4.7, 2);
+    paintRegionalWater(section);
+    paintRegionalOverworldTerrain(section);
 
     const midX = Math.floor(Game.config.DUNGEON_WIDTH / 2);
     const midY = Math.floor(Game.config.DUNGEON_HEIGHT / 2);
 
-    if (overworldRandom(section, 71) > 0.2) {
+    if (overworldRandom(section, 71) > 0.55) {
         const lakeX = overworldRange(section, 72, 4, Game.config.DUNGEON_WIDTH - 5);
         const lakeY = overworldRange(section, 73, 3, Game.config.DUNGEON_HEIGHT - 4);
         growOverworldPatch(
@@ -1035,13 +1321,13 @@ function generateOverworldSection(section) {
                 {x: lakeX - 1, y: lakeY}
             ],
             Tile.water,
-            overworldRange(section, 74, 34, 95),
+            overworldRange(section, 74, 18, 46),
             76,
             {avoidWater: false, spreadCutoff: 0.05}
         );
     }
 
-    const forestCount = overworldRange(section, 100, 4, 7);
+    const forestCount = overworldRange(section, 100, 1, 3);
     for (let i = 0; i < forestCount; i++) {
         const seedX = overworldRange(section, 101 + i * 10, 3, Game.config.DUNGEON_WIDTH - 4);
         const seedY = overworldRange(section, 102 + i * 10, 2, Game.config.DUNGEON_HEIGHT - 3);
@@ -1052,30 +1338,13 @@ function generateOverworldSection(section) {
                 {x: seedX + overworldRange(section, 103 + i * 10, -1, 1), y: seedY + 1}
             ],
             Tile.tree,
-            overworldRange(section, 104 + i * 10, 18, 42),
+            overworldRange(section, 104 + i * 10, 8, 20),
             105 + i * 10,
             {avoidWater: true, spreadCutoff: 0.1}
         );
     }
 
-    const edgeSeeds = [
-        {x: 1, y: overworldRange(section, 141, 2, Game.config.DUNGEON_HEIGHT - 3)},
-        {x: Game.config.DUNGEON_WIDTH - 2, y: overworldRange(section, 142, 2, Game.config.DUNGEON_HEIGHT - 3)},
-        {x: overworldRange(section, 143, 2, Game.config.DUNGEON_WIDTH - 3), y: 1},
-        {x: overworldRange(section, 144, 2, Game.config.DUNGEON_WIDTH - 3), y: Game.config.DUNGEON_HEIGHT - 2}
-    ];
-    for (let i = 0; i < edgeSeeds.length; i++) {
-        growOverworldPatch(
-            section,
-            [edgeSeeds[i]],
-            Tile.tree,
-            overworldRange(section, 145 + i, 10, 24),
-            150 + i * 7,
-            {avoidWater: true, spreadCutoff: 0.08}
-        );
-    }
-
-    const ridgeCount = overworldRange(section, 160, 1, 3);
+    const ridgeCount = overworldRange(section, 160, 0, 2);
     for (let i = 0; i < ridgeCount; i++) {
         const startX = overworldRange(section, 161 + i * 10, 2, Game.config.DUNGEON_WIDTH - 8);
         const startY = overworldRange(section, 162 + i * 10, 2, Game.config.DUNGEON_HEIGHT - 7);
@@ -1083,7 +1352,7 @@ function generateOverworldSection(section) {
             section,
             [{x: startX, y: startY}, {x: startX + 1, y: startY}],
             Tile.rock,
-            overworldRange(section, 163 + i * 10, 5, 12),
+            overworldRange(section, 163 + i * 10, 3, 8),
             165 + i * 10,
             {avoidWater: true}
         );
