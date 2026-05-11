@@ -48,6 +48,10 @@ Tile.rock = function() {
     return new Tile(false, true, [105, 105, 95], 'o', 'rock');
 };
 
+Tile.sand = function() {
+    return new Tile(true, false, [194, 178, 128], '', 'sand');
+};
+
 Tile.dungeonEntrance = function() {
     return new Tile(true, false, [0, 0, 0], '', 'dungeonEntrance');
 };
@@ -61,8 +65,48 @@ Tile.water = function() {
     return new Tile(false, false, [30, 100, 200], '~', 'water');
 };
 
+Tile.waterTone = function(color, walkable) {
+    return new Tile(walkable === true, false, color, '~', 'water');
+};
+
+Tile.shallowWater = function() {
+    return Tile.waterTone([62, 156, 224], true);
+};
+
+Tile.deepWater = function() {
+    return Tile.waterTone([18, 72, 160]);
+};
+
+Tile.midDeepWater = function() {
+    return Tile.waterTone([12, 56, 140]);
+};
+
+Tile.veryDeepWater = function() {
+    return Tile.waterTone([6, 34, 105]);
+};
+
 Tile.ocean = function() {
-    return new Tile(false, false, [18, 72, 160], '~', 'ocean');
+    return new Tile(false, false, [26, 108, 184], '~', 'ocean');
+};
+
+Tile.oceanTone = function(color, walkable) {
+    return new Tile(walkable === true, false, color, '~', 'ocean');
+};
+
+Tile.shallowOcean = function() {
+    return Tile.oceanTone([56, 162, 210], true);
+};
+
+Tile.deepOcean = function() {
+    return Tile.oceanTone([8, 42, 118]);
+};
+
+Tile.midDeepOcean = function() {
+    return Tile.oceanTone([10, 64, 128]);
+};
+
+Tile.veryDeepOcean = function() {
+    return Tile.oceanTone([4, 42, 96]);
 };
 
 Tile.lava = function() {
@@ -397,9 +441,53 @@ function waterRunLength(x, y, dx, dy) {
     return length;
 }
 
+function waterBodyTouchesChunkEdge(seeds) {
+    const visited = new Set();
+    const stack = seeds.slice();
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    while (stack.length > 0) {
+        const current = stack.pop();
+        const key = current.x + ',' + current.y;
+        if (visited.has(key) || !isWaterLike(current.x, current.y)) continue;
+
+        visited.add(key);
+
+        if (current.x === 0 ||
+            current.y === 0 ||
+            current.x === Game.config.DUNGEON_WIDTH - 1 ||
+            current.y === Game.config.DUNGEON_HEIGHT - 1) {
+            return true;
+        }
+
+        for (let i = 0; i < dirs.length; i++) {
+            stack.push({x: current.x + dirs[i][0], y: current.y + dirs[i][1]});
+        }
+    }
+
+    return false;
+}
+
+function horizontalWaterRunTouchesChunkEdge(startX, endX, y) {
+    const seeds = [];
+    for (let x = startX; x <= endX; x++) {
+        seeds.push({x, y});
+    }
+    return waterBodyTouchesChunkEdge(seeds);
+}
+
+function verticalWaterRunTouchesChunkEdge(x, startY, endY) {
+    const seeds = [];
+    for (let y = startY; y <= endY; y++) {
+        seeds.push({x, y});
+    }
+    return waterBodyTouchesChunkEdge(seeds);
+}
+
 function addHorizontalBridgeAcrossRun(startX, endX, y) {
     if (endX - startX + 1 < 2) return false;
     if (startX < 1 || endX > Game.config.DUNGEON_WIDTH - 2) return false;
+    if (!horizontalWaterRunTouchesChunkEdge(startX, endX, y)) return false;
     if (!isBridgeApproach(startX - 1, y) || !isBridgeApproach(endX + 1, y)) return false;
 
     for (let x = startX; x <= endX; x++) {
@@ -428,6 +516,7 @@ function addHorizontalBridgeAcrossRun(startX, endX, y) {
 function addVerticalBridgeAcrossRun(x, startY, endY) {
     if (endY - startY + 1 < 2) return false;
     if (startY < 1 || endY > Game.config.DUNGEON_HEIGHT - 2) return false;
+    if (!verticalWaterRunTouchesChunkEdge(x, startY, endY)) return false;
     if (!isBridgeApproach(x, startY - 1) || !isBridgeApproach(x, endY + 1)) return false;
 
     for (let y = startY; y <= endY; y++) {
@@ -654,6 +743,140 @@ function addOverworldBridges() {
     cleanupTinyWater();
 }
 
+function canBecomeShorelineSand(tile) {
+    return tile.walkable && (!tile.special || tile.special === 'grass');
+}
+
+function isGrassLikeTile(tile) {
+    return tile.walkable && (!tile.special || tile.special === 'grass');
+}
+
+function applyShorelineSand() {
+    const candidates = new Set();
+    const toSand = [];
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            const tile = Game.world.dungeonGrid[y][x];
+            if (!canBecomeShorelineSand(tile)) continue;
+
+            let waterBorders = 0;
+            for (let i = 0; i < dirs.length; i++) {
+                if (isWaterLike(x + dirs[i][0], y + dirs[i][1])) waterBorders++;
+            }
+
+            if (waterBorders > 0) toSand.push({x, y, waterBorders});
+        }
+    }
+
+    for (let i = 0; i < toSand.length; i++) {
+        candidates.add(toSand[i].x + ',' + toSand[i].y);
+    }
+
+    const smoothedSand = toSand.filter(function(cell) {
+        let candidateNeighbors = 0;
+
+        for (let i = 0; i < dirs.length; i++) {
+            if (candidates.has((cell.x + dirs[i][0]) + ',' + (cell.y + dirs[i][1]))) {
+                candidateNeighbors++;
+            }
+        }
+
+        return cell.waterBorders > 1 || candidateNeighbors > 1;
+    });
+
+    for (let i = 0; i < smoothedSand.length; i++) {
+        applyOverworldTile(smoothedSand[i].x, smoothedSand[i].y, Tile.sand());
+    }
+}
+
+function nearestDistance(x, y, sources, maxDistance) {
+    let nearest = maxDistance + 1;
+
+    for (let i = 0; i < sources.length; i++) {
+        const distance = Math.abs(x - sources[i].x) + Math.abs(y - sources[i].y);
+        if (distance < nearest) nearest = distance;
+        if (nearest === 1) break;
+    }
+
+    return nearest;
+}
+
+function applyGrassTones() {
+    const forestSources = [];
+    const shoreSources = [];
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            const special = Game.world.dungeonGrid[y][x].special;
+            if (special === 'tree') forestSources.push({x, y});
+            if (special === 'sand' || special === 'water' || special === 'ocean') shoreSources.push({x, y});
+        }
+    }
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            if (!isGrassLikeTile(Game.world.dungeonGrid[y][x])) continue;
+
+            const forestDistance = nearestDistance(x, y, forestSources, 8);
+            const shoreDistance = nearestDistance(x, y, shoreSources, 8);
+
+            if (forestDistance <= 2 && shoreDistance > 1) {
+                applyOverworldTile(x, y, Tile.darkGrass());
+            } else if (shoreDistance <= 2 || forestDistance >= 5) {
+                applyOverworldTile(x, y, Tile.lightGrass());
+            } else {
+                applyOverworldTile(x, y, Tile.grass());
+            }
+        }
+    }
+}
+
+function isWaterToneSource(tile) {
+    return tile.special !== 'water' && tile.special !== 'ocean' && tile.special !== 'bridge';
+}
+
+function applyWaterTones() {
+    const landSources = [];
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            if (isWaterToneSource(Game.world.dungeonGrid[y][x])) {
+                landSources.push({x, y});
+            }
+        }
+    }
+
+    for (let y = 0; y < Game.config.DUNGEON_HEIGHT; y++) {
+        for (let x = 0; x < Game.config.DUNGEON_WIDTH; x++) {
+            const special = Game.world.dungeonGrid[y][x].special;
+            if (special !== 'water' && special !== 'ocean') continue;
+
+            const shoreDistance = nearestDistance(x, y, landSources, 6);
+            if (special === 'ocean') {
+                if (shoreDistance <= 1) {
+                    applyOverworldTile(x, y, Tile.shallowOcean());
+                } else if (shoreDistance <= 3) {
+                    applyOverworldTile(x, y, Tile.ocean());
+                } else if (shoreDistance <= 5) {
+                    applyOverworldTile(x, y, Tile.midDeepOcean());
+                } else {
+                    applyOverworldTile(x, y, Tile.veryDeepOcean());
+                }
+            } else if (shoreDistance <= 1) {
+                applyOverworldTile(x, y, Tile.shallowWater());
+            } else if (shoreDistance <= 3) {
+                applyOverworldTile(x, y, Tile.water());
+            } else if (shoreDistance <= 5) {
+                applyOverworldTile(x, y, Tile.midDeepWater());
+            } else {
+                applyOverworldTile(x, y, Tile.veryDeepWater());
+            }
+        }
+    }
+}
+
 function paintHorizontalRiver(section, worldY, salt, width) {
     const localBaseY = worldY - section.y * Game.config.DUNGEON_HEIGHT;
     if (localBaseY < -6 || localBaseY > Game.config.DUNGEON_HEIGHT + 6) return;
@@ -809,6 +1032,9 @@ function generateOverworldSection(section) {
     carveOverworldTrails(section);
     cleanupTinyWater();
     addOverworldBridges();
+    applyShorelineSand();
+    applyGrassTones();
+    applyWaterTones();
 
     return { x: midX, y: midY };
 }

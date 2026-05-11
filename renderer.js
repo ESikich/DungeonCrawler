@@ -10,6 +10,7 @@ Game.Renderer = (function() {
     let ctx = null;
     let lightCanvas = null;
     let lightCtx = null;
+    const tileImages = {};
     
     // Private helper functions
     function renderGlyph(glyph, x, y, color) {
@@ -34,6 +35,20 @@ Game.Renderer = (function() {
         if (tile.special === 'rock') return 'rgb(125, 80, 45)';
         if (tile.special === 'bridge') return 'rgb(82, 48, 24)';
         return 'white';
+    }
+
+    function loadTileImage(name, src) {
+        const image = new Image();
+        image.src = src;
+        tileImages[name] = image;
+    }
+
+    function renderTileImage(tile, x, y) {
+        const image = tileImages[tile.special];
+        if (!image || !image.complete || image.naturalWidth === 0) return false;
+
+        ctx.drawImage(image, x, y, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
+        return true;
     }
 
     function getActiveEffects(status) {
@@ -73,6 +88,10 @@ Game.Renderer = (function() {
             lightCanvas.width = Game.config.DUNGEON_PIXEL_WIDTH;
             lightCanvas.height = Game.config.DUNGEON_PIXEL_HEIGHT;
             lightCtx = lightCanvas.getContext('2d');
+
+            loadTileImage('tree', 'tiles/tree.png');
+            loadTileImage('rock', 'tiles/rock.png');
+            loadTileImage('sand', 'tiles/sand.png');
             
             return true;
         },
@@ -207,6 +226,10 @@ Game.Renderer = (function() {
                 ctx.fillStyle = `rgb(${tile.color.join(',')})`;
                 ctx.fillRect(screenX, screenY, Game.config.TILE_SIZE, Game.config.TILE_SIZE);
                 
+                if (renderTileImage(tile, screenX, screenY)) {
+                    return;
+                }
+
                 if (tile.glyph && tile.glyph !== '.') {
                     renderGlyph(tile.glyph, screenX, screenY, getTileGlyphColor(tile));
                 }

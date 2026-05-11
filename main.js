@@ -199,6 +199,10 @@ Game.Controller = (function() {
 // Input Handler with Dependency Injection
 Game.InputHandler = function(gameController) {
     this.controller = gameController;
+
+    this.isSpaceKey = function(e) {
+        return e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space';
+    };
     
     this.setup = function() {
         document.addEventListener('keydown', (e) => {
@@ -206,7 +210,7 @@ Game.InputHandler = function(gameController) {
             
             // Start screen
             if (Game.state.current === 'start') { 
-                if (key === ' ') { 
+                if (this.isSpaceKey(e)) { 
                     Game.state.current = 'playing'; 
                     this.controller.initGame(); 
                 } 
@@ -265,7 +269,7 @@ Game.InputHandler = function(gameController) {
                 e.preventDefault(); 
                 return; 
             }
-            if (key === 'Enter' || key === ' ') { 
+            if (key === 'Enter' || this.isSpaceKey(e)) { 
                 this.controller.handleInventoryUse();
                 e.preventDefault(); 
                 return; 
@@ -285,7 +289,7 @@ Game.InputHandler = function(gameController) {
                 return;
             }
         } else {
-            if (key === 'Enter' || key === ' ') { 
+            if (key === 'Enter' || this.isSpaceKey(e)) { 
                 this.controller.handleInventoryToggle();
                 e.preventDefault(); 
                 return; 
@@ -296,16 +300,18 @@ Game.InputHandler = function(gameController) {
     
     this.handleGameInput = function(key, e) {
         let dx = 0, dy = 0;
+
+        if (this.isSpaceKey(e)) {
+            this.controller.handleWait();
+            e.preventDefault();
+            return;
+        }
         
         switch (key) {
             case 'w': case 'W': case 'ArrowUp': dy = -1; break;
             case 's': case 'S': case 'ArrowDown': dy = 1; break;
             case 'a': case 'A': case 'ArrowLeft': dx = -1; break;
             case 'd': case 'D': case 'ArrowRight': dx = 1; break;
-            case ' ': 
-                this.controller.handleWait(); 
-                e.preventDefault(); 
-                return;
             case 'i': case 'I': 
                 this.controller.handleInventoryToggle(); 
                 e.preventDefault(); 

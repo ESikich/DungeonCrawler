@@ -201,7 +201,12 @@ class CRTShader {
 
     // Update texture with source canvas
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, sourceCanvas);
+    try {
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, sourceCanvas);
+    } catch (error) {
+      console.warn('Disabling WebGL CRT shader because the game canvas cannot be copied:', error);
+      return false;
+    }
 
     // Set viewport
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -236,6 +241,7 @@ class CRTShader {
 
     // Draw
     this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+    return true;
   }
 }
 
@@ -243,6 +249,14 @@ class CRTShader {
 window.addEventListener('load', function () {
   const gameCanvas   = document.getElementById('gameCanvas');
   const shaderCanvas = document.getElementById('crtShaderCanvas');
+  const crtScreen    = document.getElementById('crtScreen');
+
+  function useCssCrtCurve() {
+    shaderCanvas.style.display = 'none';
+    if (crtScreen) {
+      crtScreen.classList.add('css-crt-curve');
+    }
+  }
 
   let crtShader = null;
   let useWebGL = true;
@@ -270,12 +284,15 @@ window.addEventListener('load', function () {
       if (typeof Game !== 'undefined' && Game.state) {
         crtShader.setArea(Game.state.area);
       }
-      crtShader.render(gameCanvas);
+      if (crtShader.render(gameCanvas) === false) {
+        useCssCrtCurve();
+        return;
+      }
       requestAnimationFrame(renderCRT);
     })();
   } else {
     // Hide WebGL canvas and rely on CSS overlays
-    shaderCanvas.style.display = 'none';
+    useCssCrtCurve();
     console.log('Using CSS-based CRT effects');
   }
 });

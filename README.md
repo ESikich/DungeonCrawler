@@ -4,7 +4,13 @@ A vanilla JavaScript roguelike dungeon crawler rendered on an HTML canvas with C
 
 ## Run
 
-Open `index.html` in a browser.
+Requires Node.js.
+
+```powershell
+npm start
+```
+
+Then open `http://localhost:8080`. Running through localhost lets image tiles and the WebGL CRT curve work together.
 
 ## Controls
 
@@ -16,8 +22,6 @@ Open `index.html` in a browser.
 - `Esc`: open menu or close inventory
 
 ## Validate
-
-Requires Node.js.
 
 ```powershell
 npm test
