@@ -20,6 +20,7 @@ from .models import (
     EntitySnapshot,
     GameState,
     ForestReturnContext,
+    MINUTES_PER_DAY,
     OverworldTransition,
     Position,
     Tile,
@@ -159,6 +160,7 @@ class Game:
             position_after = self._player_position_tuple()
             moved = position_before is not None and position_after is not None and position_before != position_after
             if action.kind == "move" and moved and self._handle_tile_transition():
+                self._advance_time()
                 self.state.turn_count += 1
                 return True
             if self.state.area == "dungeon" and not self.state.player_attacked_this_turn:
@@ -171,8 +173,28 @@ class Game:
                 update_vision(self.ecs, self.world, self.config, self.world.player_eid)
                 self._reveal_overworld_if_needed()
             self.state.turn_count += 1
+            self._advance_time()
 
         return consumed_turn
+
+    def clock_minutes(self) -> int:
+        return self.state.time_minutes % MINUTES_PER_DAY
+
+    def clock_text(self) -> str:
+        minutes = self.clock_minutes()
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+    def day_phase(self) -> str:
+        minutes = self.clock_minutes()
+        if self.config.day_start_minute <= minutes < self.config.night_start_minute:
+            return "day"
+        return "night"
+
+    def is_night(self) -> bool:
+        return self.day_phase() == "night"
+
+    def _advance_time(self) -> None:
+        self.state.time_minutes = (self.state.time_minutes + self.config.minutes_per_turn) % MINUTES_PER_DAY
 
     def spawn_monster(self, x: int, y: int, **kwargs: object) -> int:
         return create_monster(self.ecs, x, y, **kwargs)

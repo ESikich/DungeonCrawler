@@ -97,6 +97,7 @@ def render(
         _draw_grid(world_surface, game.world.dungeon_grid, tile_size, assets, glyph_font, visible, seen)
         _draw_entities(world_surface, font, game, tile_size, assets, visible)
 
+    _apply_time_of_day_tint(world_surface, game)
     screen.blit(world_surface, (0, 0))
 
     panel_y = game.config.dungeon_height * tile_size
@@ -358,10 +359,10 @@ def _draw_hud(screen: object, font: object, game: Game, panel_y: int) -> None:
 
     _draw_meters(screen, padding, content_y, meter_width, health, progress)
 
+    updates_y = _draw_time_line(screen, info_x, content_y, game)
     effects = _status_effects(status)
-    updates_y = content_y
     if effects:
-        updates_y = _draw_status_line(screen, info_x, content_y, info_width, effects) + 12
+        updates_y = _draw_status_line(screen, info_x, updates_y + 8, info_width, effects) + 12
     _draw_messages(screen, game, info_x, updates_y, info_width, controls_y - updates_y - 14)
     _draw_controls(screen, padding, controls_y)
 
@@ -417,6 +418,16 @@ def _draw_status_line(screen: object, x: int, y: int, width: int, effects: list[
     text = _fit_text("   ".join(effects), text_font, width)
     screen.blit(text_font.render(text, True, (120, 255, 170)), (x, y + 20))
     return y + 40
+
+
+def _draw_time_line(screen: object, x: int, y: int, game: Game) -> int:
+    label_font = _font(14)
+    value_font = _font(20)
+    phase = game.day_phase().upper()
+    phase_color = (255, 218, 128) if phase == "DAY" else (142, 170, 255)
+    screen.blit(label_font.render("TIME", True, phase_color), (x, y))
+    screen.blit(value_font.render(f"{game.clock_text()}  {phase}", True, (230, 230, 235)), (x, y + 18))
+    return y + 42
 
 
 def _draw_messages(screen: object, game: Game, x: int, y: int, width: int, height: int) -> None:
@@ -497,6 +508,7 @@ def _draw_menu(screen: object, font: object, game: Game) -> None:
         ("Location", location),
         ("Health", health_text),
         ("Level", f"{level_text}  XP {xp_text}"),
+        ("Time", f"{game.clock_text()} {game.day_phase().title()}"),
         ("Turn", str(game.state.turn_count)),
         ("Gold", str(game.state.player_gold)),
         ("Inventory", inventory_text),
@@ -513,7 +525,7 @@ def _draw_menu(screen: object, font: object, game: Game) -> None:
     for index, (label, value) in enumerate(right_lines):
         _draw_menu_stat(screen, stat_font, label, value, right_x, row_y + index * line_height, dim, bright)
 
-    status_y = row_y + 6 * line_height + 8
+    status_y = row_y + len(left_lines) * line_height + 8
     screen.blit(stat_font.render("STATUS", True, dim), (left_x, status_y))
     effects = _status_effects(status)
     status_text = _fit_text(", ".join(effects) if effects else "Clear", stat_font, panel_width - 160)
@@ -523,6 +535,53 @@ def _draw_menu(screen: object, font: object, game: Game) -> None:
     footer = "ESC: resume    R: restart    F5: save    F9: load"
     footer_surface = footer_font.render(footer, True, (170, 178, 194))
     screen.blit(footer_surface, (x + (panel_width - footer_surface.get_width()) // 2, y + panel_height - 32))
+
+
+def _apply_time_of_day_tint(surface: object, game: Game) -> None:
+    tint_color, alpha = _time_of_day_tint(game.clock_minutes())
+    if alpha <= 0:
+        return
+    pygame = _pygame()
+    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    overlay.fill((*tint_color, alpha))
+    surface.blit(overlay, (0, 0))
+
+
+def _time_of_day_tint(minutes: int) -> tuple[tuple[int, int, int], int]:
+    minute = minutes % (24 * 60)
+    points = (
+        (0, (3, 8, 36), 136),
+        (4 * 60 + 45, (6, 18, 72), 118),
+        (5 * 60 + 45, (36, 80, 156), 76),
+        (6 * 60 + 30, (255, 160, 64), 54),
+        (8 * 60, (255, 218, 144), 18),
+        (10 * 60, (255, 255, 255), 0),
+        (16 * 60 + 30, (255, 255, 255), 0),
+        (17 * 60 + 45, (255, 174, 74), 48),
+        (18 * 60 + 45, (70, 108, 202), 72),
+        (20 * 60, (8, 18, 72), 132),
+        (24 * 60, (3, 8, 36), 136),
+    )
+
+    for index in range(len(points) - 1):
+        start_minute, start_color, start_alpha = points[index]
+        end_minute, end_color, end_alpha = points[index + 1]
+        if start_minute <= minute <= end_minute:
+            ratio = (minute - start_minute) / max(1, end_minute - start_minute)
+            return (
+                _lerp_color(start_color, end_color, ratio),
+                round(start_alpha + (end_alpha - start_alpha) * ratio),
+            )
+    return points[0][1], points[0][2]
+
+
+def _lerp_color(
+    start: tuple[int, int, int],
+    end: tuple[int, int, int],
+    ratio: float,
+) -> tuple[int, int, int]:
+    clamped = max(0.0, min(1.0, ratio))
+    return tuple(round(a + (b - a) * clamped) for a, b in zip(start, end))
 
 
 def _draw_inventory(screen: object, font: object, game: Game, inventory_index: int) -> None:

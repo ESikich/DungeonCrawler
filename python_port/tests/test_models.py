@@ -8,6 +8,9 @@ def test_default_config_matches_js_dimensions() -> None:
     config = GameConfig()
     assert config.dungeon_width == 25
     assert config.dungeon_height == 17
+    assert config.minutes_per_turn == 15
+    assert config.day_start_minute == 6 * 60
+    assert config.night_start_minute == 18 * 60
 
 
 def test_tile_constructors_match_expected_flags() -> None:
@@ -53,6 +56,7 @@ def test_default_state_and_empty_world_start_clean() -> None:
 
     assert state.current == "start"
     assert state.turn_count == 0
+    assert state.time_minutes == 8 * 60
     assert state.game_over is False
     assert state.area == "overworld"
     assert state.floor == 0

@@ -10,7 +10,28 @@ def test_wait_advances_turn_and_logs_message() -> None:
 
     assert consumed is True
     assert game.state.turn_count == 1
+    assert game.state.time_minutes == 8 * 60 + 15
+    assert game.clock_text() == "08:15"
+    assert game.day_phase() == "day"
     assert game.world.messages[-1].text == "You wait."
+
+
+def test_clock_wraps_and_switches_day_phase() -> None:
+    game = Game()
+    game.new_game(seed=3)
+    game.state.time_minutes = 17 * 60 + 45
+
+    game.dispatch(Action.wait())
+
+    assert game.clock_text() == "18:00"
+    assert game.day_phase() == "night"
+    assert game.is_night() is True
+
+    game.state.time_minutes = 23 * 60 + 45
+    game.dispatch(Action.wait())
+
+    assert game.clock_text() == "00:00"
+    assert game.day_phase() == "night"
 
 
 def test_wall_and_bounds_movement_are_blocked_but_consume_turn() -> None:

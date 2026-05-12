@@ -96,6 +96,7 @@ def test_renderer_uses_tile_background_color_before_assets() -> None:
         tile_size = 32
         game = Game()
         game.new_game(seed=7)
+        game.state.time_minutes = 12 * 60
         game.world.dungeon_grid[0][0] = tiles.grass()
         game.world.dungeon_grid[0][1] = tiles.water()
         player_id = game.world.player_eid
@@ -113,6 +114,52 @@ def test_renderer_uses_tile_background_color_before_assets() -> None:
         assert screen.get_at((tile_size + 2, 2))[:3] == tiles.water().color
     finally:
         pygame.quit()
+
+
+def test_renderer_applies_night_tint_only_at_night() -> None:
+    import pygame
+
+    from dungeon_crawler.core.game import Game
+    from dungeon_crawler.pygame_app.renderer import _apply_time_of_day_tint
+
+    pygame.init()
+    try:
+        game = Game()
+        game.new_game(seed=13)
+        game.state.time_minutes = 12 * 60
+        day_surface = pygame.Surface((4, 4))
+        day_surface.fill((100, 100, 100))
+
+        _apply_time_of_day_tint(day_surface, game)
+
+        assert day_surface.get_at((0, 0))[:3] == (100, 100, 100)
+
+        game.state.time_minutes = 20 * 60
+        night_surface = pygame.Surface((4, 4))
+        night_surface.fill((100, 100, 100))
+
+        _apply_time_of_day_tint(night_surface, game)
+
+        assert night_surface.get_at((0, 0))[:3] != (100, 100, 100)
+    finally:
+        pygame.quit()
+
+
+def test_time_of_day_tint_has_golden_blue_and_dark_night_phases() -> None:
+    from dungeon_crawler.pygame_app.renderer import _time_of_day_tint
+
+    noon_color, noon_alpha = _time_of_day_tint(12 * 60)
+    sunset_color, sunset_alpha = _time_of_day_tint(18 * 60)
+    blue_hour_color, blue_hour_alpha = _time_of_day_tint(19 * 60)
+    midnight_color, midnight_alpha = _time_of_day_tint(0)
+
+    assert noon_color == (255, 255, 255)
+    assert noon_alpha == 0
+    assert sunset_color[0] > sunset_color[2]
+    assert sunset_alpha > noon_alpha
+    assert blue_hour_color[2] > blue_hour_color[0]
+    assert blue_hour_alpha > sunset_alpha
+    assert midnight_alpha > blue_hour_alpha
 
 
 def test_map_viewport_centers_and_pans_like_js() -> None:
@@ -567,6 +614,7 @@ def test_renderer_centers_smaller_tree_chunks_with_black_margins() -> None:
         tile_size = 32
         game = Game()
         game.new_game(seed=9)
+        game.state.time_minutes = 12 * 60
         game.world.dungeon_grid = [[tiles.light_grass() for _x in range(3)] for _y in range(3)]
         player_id = game.world.player_eid
         assert player_id is not None
@@ -607,6 +655,7 @@ def test_renderer_keeps_tree_chunk_tile_size_when_board_shrinks() -> None:
         tile_size = 32
         game = Game()
         game.new_game(seed=9)
+        game.state.time_minutes = 12 * 60
         game.world.dungeon_grid = [[tiles.light_grass() for _x in range(13)] for _y in range(9)]
         player_id = game.world.player_eid
         assert player_id is not None

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 Coordinate = tuple[int, int]
 Color = tuple[int, int, int]
+MINUTES_PER_DAY = 24 * 60
 
 
 @dataclass(slots=True, frozen=True)
@@ -190,6 +191,7 @@ class ForestReturnContext:
 class GameState:
     current: str = "start"
     turn_count: int = 0
+    time_minutes: int = 8 * 60
     game_over: bool = False
     area: str = "overworld"
     floor: int = 0

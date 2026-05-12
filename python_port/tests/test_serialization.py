@@ -38,6 +38,7 @@ def test_game_to_dict_is_json_compatible_and_restores_core_state() -> None:
     restored_player_id = restored.world.player_eid
     assert restored_player_id == player_id
     assert restored.state.turn_count == game.state.turn_count
+    assert restored.state.time_minutes == game.state.time_minutes
     assert restored.state.area == game.state.area
     assert restored.state.floor == game.state.floor
     assert restored.state.dungeon_max_depth == game.state.dungeon_max_depth

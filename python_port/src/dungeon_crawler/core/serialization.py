@@ -44,6 +44,9 @@ def game_to_dict(game: Game) -> dict[str, Any]:
             "dungeon_width": game.config.dungeon_width,
             "dungeon_height": game.config.dungeon_height,
             "memory_reveal": game.config.memory_reveal,
+            "minutes_per_turn": game.config.minutes_per_turn,
+            "day_start_minute": game.config.day_start_minute,
+            "night_start_minute": game.config.night_start_minute,
         },
         "rng": _jsonify(game.rng.get_state()),
         "state": _state_to_dict(game.state),
@@ -62,6 +65,9 @@ def game_from_dict(data: dict[str, Any]) -> Game:
             dungeon_width=int(config_data["dungeon_width"]),
             dungeon_height=int(config_data["dungeon_height"]),
             memory_reveal=float(config_data["memory_reveal"]),
+            minutes_per_turn=int(config_data.get("minutes_per_turn", 15)),
+            day_start_minute=int(config_data.get("day_start_minute", 6 * 60)),
+            night_start_minute=int(config_data.get("night_start_minute", 18 * 60)),
         )
     )
     game.rng = Rng()
@@ -227,6 +233,7 @@ def _state_to_dict(state: GameState) -> dict[str, Any]:
     return {
         "current": state.current,
         "turn_count": state.turn_count,
+        "time_minutes": state.time_minutes,
         "game_over": state.game_over,
         "area": state.area,
         "floor": state.floor,
@@ -245,6 +252,7 @@ def _state_from_dict(data: dict[str, Any]) -> GameState:
     return GameState(
         current=str(data["current"]),
         turn_count=int(data["turn_count"]),
+        time_minutes=int(data.get("time_minutes", 8 * 60)),
         game_over=bool(data["game_over"]),
         area=str(data.get("area", "dungeon" if int(data.get("floor", -1)) < 0 else "overworld")),
         floor=int(data.get("floor", -1)),
