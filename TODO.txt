@@ -1,0 +1,19 @@
+Special items:
+- map
+- raft
+- axe
+- fishing pole
+- pickaxe
+- bow
+- sword
+- shield
+- jump
+- wings
+
+Todo:
+- special items
+- NPCs
+- cave tunnels
+- princess
+- biomes
+- stats when leveling
