@@ -287,8 +287,10 @@ def test_nested_forest_generation_uses_parent_grid_boundary() -> None:
     forest = game._generate_forest_grid(parent_section, 0, 0)
 
     assert all(tile.special != "ocean" for row in forest for tile in row)
-    assert all(row[0].special == "tree" for row in forest)
-    assert all(tile.special == "tree" for tile in forest[0])
+    assert forest[1][0].walkable is True
+    assert forest[0][1].walkable is True
+    assert not all(row[0].special == "tree" for row in forest)
+    assert not all(tile.special == "tree" for tile in forest[0])
 
 
 def test_forest_exit_into_another_tree_enters_that_tree_chunk() -> None:
@@ -305,9 +307,11 @@ def test_forest_exit_into_another_tree_enters_that_tree_chunk() -> None:
     game.dispatch(Action.move(1, 0))
     first_forest_section = game.world.overworld_section
     player_position = _player_position(game)
+    right_edge = [row[-1] for row in game.world.dungeon_grid]
+    assert not all(tile.special == "tree" for tile in right_edge)
+    assert game.world.dungeon_grid[5][-1].walkable is True
     player_position.x = len(game.world.dungeon_grid[0]) - 1
     player_position.y = 5
-    game.world.dungeon_grid[5][player_position.x] = tiles.dark_grass()
 
     consumed = game.dispatch(Action.move(1, 0))
 

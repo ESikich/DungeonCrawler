@@ -581,13 +581,52 @@ class Game:
             ((0, -1), [(x, 0) for x in range(width)]),
             ((0, 1), [(x, height - 1) for x in range(width)]),
         )
+        open_edges: list[tuple[int, int]] = []
 
         for (dx, dy), cells in edges:
             neighbor = self._forest_parent_tile_at(parent_section, tree_x + dx, tree_y + dy)
-            if neighbor.walkable and neighbor.special != "tree":
+            if neighbor.walkable or neighbor.special == "tree":
+                open_edges.append((dx, dy))
                 continue
             for x, y in cells:
                 grid[y][x] = deepcopy(neighbor)
+
+        for dx, dy in open_edges:
+            self._open_forest_edge_portal(grid, parent_section, tree_x, tree_y, dx, dy)
+
+    def _open_forest_edge_portal(
+        self,
+        grid: list[list[Tile]],
+        parent_section: tuple[int, int],
+        tree_x: int,
+        tree_y: int,
+        dx: int,
+        dy: int,
+    ) -> None:
+        width = len(grid[0]) if grid else 0
+        height = len(grid)
+        parent_width, parent_height = self._forest_parent_grid_size(parent_section)
+        portal_x = self._scale_grid_coordinate(tree_x, parent_width, width)
+        portal_y = self._scale_grid_coordinate(tree_y, parent_height, height)
+
+        if dx < 0:
+            cells = [(0, portal_y), (min(1, width - 1), portal_y)]
+        elif dx > 0:
+            cells = [(width - 1, portal_y), (max(0, width - 2), portal_y)]
+        elif dy < 0:
+            cells = [(portal_x, 0), (portal_x, min(1, height - 1))]
+        else:
+            cells = [(portal_x, height - 1), (portal_x, max(0, height - 2))]
+
+        for x, y in cells:
+            if 0 <= y < height and 0 <= x < width:
+                grid[y][x] = tiles.dark_grass()
+
+    def _forest_parent_grid_size(self, section: tuple[int, int]) -> tuple[int, int]:
+        grid = self.world.overworld_sections.get(section)
+        if grid:
+            return len(grid[0]), len(grid)
+        return self.config.dungeon_width, self.config.dungeon_height
 
     def _forest_grid_size(self) -> tuple[int, int]:
         depth = 1 + len(self.world.forest_return_stack)
