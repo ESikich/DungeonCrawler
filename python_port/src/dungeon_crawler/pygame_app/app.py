@@ -131,15 +131,17 @@ def main() -> None:
             map_view=map_view,
         )
         overlay = crt_tuning_panel.render(pygame, _window_size(pygame, screen), crt_tuning)
-        if gl_display is not None:
-            gl_display.set_area(game.state.area)
-            gl_display.present(canvas, _window_size(pygame, screen), overlay=overlay)
-        else:
-            assert crt_effect is not None
-            crt_effect.set_area(game.state.area)
-            _blit_scaled_canvas(pygame, screen, canvas, crt_effect=crt_effect)
-            if overlay is not None:
-                screen.blit(overlay, (0, 0))
+        screen, gl_display, crt_effect = _present_frame(
+            pygame,
+            screen,
+            canvas,
+            logical_size,
+            game.state.area,
+            gl_display,
+            crt_effect,
+            crt_tuning,
+            overlay=overlay,
+        )
         pygame.display.flip()
         clock.tick(30)
 
@@ -239,10 +241,12 @@ def _create_display(pygame: object, logical_size: tuple[int, int]) -> tuple[obje
 
         pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
         screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE | pygame.OPENGL | pygame.DOUBLEBUF)
+        _log_display_backend(pygame, "Using OpenGL CRT")
         return screen, OpenGLCRTDisplay(pygame, logical_size)
     except Exception as exc:
         print(f"OpenGL CRT unavailable, using software CRT: {exc}")
         screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE)
+        _log_display_backend(pygame, "Using software CRT")
         return screen, None
 
 
@@ -260,11 +264,66 @@ def _resize_display(
         from .gl_crt import OpenGLCRTDisplay
 
         screen = pygame.display.set_mode(window_size, pygame.RESIZABLE | pygame.OPENGL | pygame.DOUBLEBUF)
+        _log_display_backend(pygame, "Using OpenGL CRT")
         return screen, OpenGLCRTDisplay(pygame, logical_size), None
     except Exception as exc:
         print(f"OpenGL CRT resize failed, using software CRT: {exc}")
-        screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
-        return screen, None, CRTEffect(logical_size)
+        return _switch_to_software_crt(pygame, window_size, logical_size, exc=exc)
+
+
+def _present_frame(
+    pygame: object,
+    screen: object,
+    canvas: object,
+    logical_size: tuple[int, int],
+    area: str,
+    gl_display: object | None,
+    crt_effect: object | None,
+    crt_tuning: object,
+    *,
+    overlay: object | None = None,
+) -> tuple[object, object | None, object | None]:
+    if gl_display is not None:
+        try:
+            gl_display.set_area(area)
+            gl_display.present(canvas, _window_size(pygame, screen), overlay=overlay)
+            return screen, gl_display, crt_effect
+        except Exception as exc:
+            print(f"OpenGL CRT present failed, falling back to software CRT: {exc}")
+            screen, gl_display, crt_effect = _switch_to_software_crt(
+                pygame,
+                _window_size(pygame, screen),
+                logical_size,
+                exc=exc,
+            )
+            _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
+
+    assert crt_effect is not None
+    crt_effect.set_area(area)
+    _blit_scaled_canvas(pygame, screen, canvas, crt_effect=crt_effect)
+    if overlay is not None:
+        screen.blit(overlay, (0, 0))
+    return screen, gl_display, crt_effect
+
+
+def _switch_to_software_crt(
+    pygame: object,
+    window_size: tuple[int, int],
+    logical_size: tuple[int, int],
+    *,
+    exc: Exception | None = None,
+) -> tuple[object, None, CRTEffect]:
+    if exc is not None:
+        print(f"Software CRT fallback reason: {exc}")
+    screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
+    _log_display_backend(pygame, "Using software CRT")
+    return screen, None, CRTEffect(logical_size)
+
+
+def _log_display_backend(pygame: object, prefix: str) -> None:
+    get_driver = getattr(pygame.display, "get_driver", None)
+    driver = get_driver() if callable(get_driver) else "unknown"
+    print(f"{prefix} (SDL driver: {driver})")
 
 
 def _clamp_window_size(size: tuple[int, int]) -> tuple[int, int]:

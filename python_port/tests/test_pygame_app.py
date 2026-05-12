@@ -438,6 +438,52 @@ def test_blit_scaled_canvas_uses_crt_output_when_present() -> None:
         pygame.quit()
 
 
+def test_present_frame_falls_back_to_software_crt_when_opengl_present_fails() -> None:
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    import pygame
+
+    from dungeon_crawler.pygame_app.app import _present_frame
+    from dungeon_crawler.pygame_app.crt_tuning import CRTTuning
+
+    class BrokenGLDisplay:
+        def __init__(self) -> None:
+            self.area = None
+
+        def set_area(self, area: str) -> None:
+            self.area = area
+
+        def present(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("invalid OpenGL context")
+
+    pygame.init()
+    try:
+        logical_size = (160, 120)
+        screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE)
+        canvas = pygame.Surface(logical_size)
+        canvas.fill((10, 30, 80))
+
+        screen, gl_display, crt_effect = _present_frame(
+            pygame,
+            screen,
+            canvas,
+            logical_size,
+            "dungeon",
+            BrokenGLDisplay(),
+            None,
+            CRTTuning(),
+            overlay=None,
+        )
+
+        assert gl_display is None
+        assert crt_effect is not None
+        assert screen.get_at((10, 10))[:3] != (0, 0, 0)
+    finally:
+        pygame.quit()
+
+
 def test_renderer_draws_overworld_map_overlay() -> None:
     import os
 
