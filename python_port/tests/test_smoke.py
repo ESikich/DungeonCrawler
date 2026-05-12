@@ -12,9 +12,10 @@ def test_headless_core_100_turn_smoke() -> None:
     player_position = game.ecs.get_component(player_id, "position")
     assert isinstance(player_position, Position)
 
-    game.spawn_item(player_position.x + 1, player_position.y, "strength_elixir")
-    game.spawn_gold(player_position.x + 2, player_position.y, 13)
-    game.spawn_item(player_position.x + 3, player_position.y, "healing_potion")
+    item_positions = _nearby_walkable_positions(game, player_position, 3)
+    game.spawn_item(item_positions[0].x, item_positions[0].y, "strength_elixir")
+    game.spawn_gold(item_positions[1].x, item_positions[1].y, 13)
+    game.spawn_item(item_positions[2].x, item_positions[2].y, "healing_potion")
     game.spawn_random_monster("slime", min_distance=6)
     game.spawn_random_monster("slime", min_distance=6)
     game.spawn_random_monster("orc", min_distance=8)
@@ -73,4 +74,25 @@ def _assert_world_consistent(game: Game) -> None:
         player_health = game.ecs.get_component(game.world.player_eid, "health")
         assert isinstance(player_position, Position)
         assert isinstance(player_health, Health)
+
+
+def _nearby_walkable_positions(game: Game, origin: Position, count: int) -> list[Position]:
+    positions: list[Position] = []
+    for radius in range(1, 8):
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                if abs(dx) + abs(dy) != radius:
+                    continue
+                x = origin.x + dx
+                y = origin.y + dy
+                if not game.config.in_bounds(x, y):
+                    continue
+                if not game.world.dungeon_grid[y][x].walkable:
+                    continue
+                if game.ecs.entities_at(x, y):
+                    continue
+                positions.append(Position(x, y))
+                if len(positions) == count:
+                    return positions
+    raise AssertionError("Not enough nearby walkable positions")
 

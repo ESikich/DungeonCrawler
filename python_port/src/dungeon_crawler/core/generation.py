@@ -86,9 +86,9 @@ def generate_basic_overworld(
 
     entrance = _place_dungeon_entrance(config, grid, section, seed)
     spawn = _spawn_for_section(config, section, entrance)
-    _ensure_walkable(grid, spawn)
-    _clear_spawn_area(config, grid, spawn)
-    if entrance is not None:
+    if section == (0, 0):
+        _ensure_walkable(grid, spawn)
+    if section == (0, 0) and entrance is not None:
         _ensure_entrance_path(config, grid, entrance, spawn)
     return GeneratedOverworld(grid=grid, spawn=spawn, entrance=entrance)
 

@@ -100,3 +100,17 @@ def test_overworld_generation_ports_regional_terrain_types() -> None:
     assert "tree" in specials
     assert "water" in specials or "ocean" in specials
     assert "sand" in specials
+
+
+def test_non_origin_overworld_sections_do_not_stamp_center_grass_slab() -> None:
+    config = GameConfig()
+    overworld = generate_basic_overworld(config, section=(4, 4), seed=1234)
+    center_x = config.dungeon_width // 2
+    center_y = config.dungeon_height // 2
+    center_patch = [
+        overworld.grid[y][x]
+        for y in range(center_y - 1, center_y + 2)
+        for x in range(center_x - 3, center_x + 4)
+    ]
+
+    assert not all(tile.walkable and tile.special in {None, "grass"} for tile in center_patch)
