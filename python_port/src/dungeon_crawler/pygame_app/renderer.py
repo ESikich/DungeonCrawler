@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from dungeon_crawler.core.game import Game
 from dungeon_crawler.core.models import Descriptor, Health, Inventory, Position, Progress, Stats, Status, Tile, Vision
+
+
+UI_FONT_CANDIDATES = (
+    "im fell english sc",
+    "cinzel",
+    "garamond",
+    "book antiqua",
+    "palatino linotype",
+    "georgia",
+    "serif",
+)
+GLYPH_FONT_CANDIDATES = ("consolas", "courier new", "monospace")
 
 
 @dataclass(slots=True)
@@ -60,37 +73,26 @@ def render(
     width = screen.get_width()
     visible, seen = _player_visibility(game)
     assets = assets or AssetCache()
-    glyph_font = _font(max(8, tile_size - 4))
+    glyph_font = _glyph_font(max(8, tile_size - 4))
 
-    for y, row in enumerate(game.world.dungeon_grid):
-        for x, tile in enumerate(row):
-            coordinate = (x, y)
-            rect = pygame.Rect(x * tile_size, y * tile_size, tile_size, tile_size)
-            pygame.draw.rect(screen, _tile_color(tile, coordinate, visible, seen), rect)
-            image = assets.tiles.get(_tile_asset_key(tile))
-            if image is not None and coordinate in visible:
-                screen.blit(image, rect)
-            else:
-                if coordinate in visible:
-                    _draw_tile_glyph(screen, glyph_font, tile, rect)
-
-    player_id = game.world.player_eid
-    for entity_id in game.ecs.entities_with(["position", "descriptor", "item"]):
-        entity_pos = game.ecs.get_component(entity_id, "position")
-        descriptor = game.ecs.get_component(entity_id, "descriptor")
-        if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
-            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor)
-
-    for entity_id in game.ecs.entities_with(["position", "descriptor", "hostile"]):
-        entity_pos = game.ecs.get_component(entity_id, "position")
-        descriptor = game.ecs.get_component(entity_id, "descriptor")
-        if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
-            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor)
-
-    if player_id is not None:
-        player_pos = game.ecs.get_component(player_id, "position")
-        if isinstance(player_pos, Position):
-            _draw_entity(screen, font, tile_size, assets, player_pos, Descriptor("Hero", "@", "royalBlue"))
+    transition = game.world.overworld_transition if game.state.area == "overworld" else None
+    if transition is not None:
+        progress = min(1.0, max(0.0, (int(time.monotonic() * 1000) - transition.start_ms) / transition.duration_ms))
+        eased = progress * progress * (3 - 2 * progress)
+        direction_x, direction_y = transition.direction
+        old_offset = (-direction_x * eased * width, -direction_y * eased * game.config.dungeon_height * tile_size)
+        new_offset = (
+            direction_x * (1 - eased) * width,
+            direction_y * (1 - eased) * game.config.dungeon_height * tile_size,
+        )
+        _draw_grid(screen, transition.from_grid, tile_size, assets, glyph_font, visible, seen, old_offset)
+        _draw_grid(screen, transition.to_grid, tile_size, assets, glyph_font, visible, seen, new_offset)
+        _draw_entities(screen, font, game, tile_size, assets, visible, new_offset)
+        if progress >= 1.0:
+            game.world.overworld_transition = None
+    else:
+        _draw_grid(screen, game.world.dungeon_grid, tile_size, assets, glyph_font, visible, seen)
+        _draw_entities(screen, font, game, tile_size, assets, visible)
 
     panel_y = game.config.dungeon_height * tile_size
     _draw_hud(screen, font, game, panel_y)
@@ -111,8 +113,21 @@ def _pygame() -> object:
     return pygame
 
 
+def _system_font(candidates: tuple[str, ...], size: int) -> object:
+    pygame = _pygame()
+    for name in candidates:
+        path = pygame.font.match_font(name)
+        if path:
+            return pygame.font.Font(path, size)
+    return pygame.font.SysFont(candidates[-1], size)
+
+
 def _font(size: int) -> object:
-    return _pygame().font.SysFont("monospace", size)
+    return _system_font(UI_FONT_CANDIDATES, size)
+
+
+def _glyph_font(size: int) -> object:
+    return _system_font(GLYPH_FONT_CANDIDATES, size)
 
 
 def _load_image(pygame: object, path: Path, tile_size: int) -> object | None:
@@ -128,6 +143,63 @@ def _load_image(pygame: object, path: Path, tile_size: int) -> object | None:
     return image
 
 
+def _draw_grid(
+    screen: object,
+    grid: list[list[Tile]],
+    tile_size: int,
+    assets: AssetCache,
+    glyph_font: object,
+    visible: set[tuple[int, int]],
+    seen: set[tuple[int, int]],
+    offset: tuple[float, float] = (0, 0),
+) -> None:
+    pygame = _pygame()
+    offset_x, offset_y = offset
+    for y, row in enumerate(grid):
+        for x, tile in enumerate(row):
+            coordinate = (x, y)
+            rect = pygame.Rect(
+                round(x * tile_size + offset_x),
+                round(y * tile_size + offset_y),
+                tile_size,
+                tile_size,
+            )
+            pygame.draw.rect(screen, _tile_color(tile, coordinate, visible, seen), rect)
+            image = assets.tiles.get(_tile_asset_key(tile))
+            if image is not None and coordinate in visible:
+                screen.blit(image, rect)
+            elif coordinate in visible:
+                _draw_tile_glyph(screen, glyph_font, tile, rect)
+
+
+def _draw_entities(
+    screen: object,
+    font: object,
+    game: Game,
+    tile_size: int,
+    assets: AssetCache,
+    visible: set[tuple[int, int]],
+    offset: tuple[float, float] = (0, 0),
+) -> None:
+    player_id = game.world.player_eid
+    for entity_id in game.ecs.entities_with(["position", "descriptor", "item"]):
+        entity_pos = game.ecs.get_component(entity_id, "position")
+        descriptor = game.ecs.get_component(entity_id, "descriptor")
+        if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
+            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset)
+
+    for entity_id in game.ecs.entities_with(["position", "descriptor", "hostile"]):
+        entity_pos = game.ecs.get_component(entity_id, "position")
+        descriptor = game.ecs.get_component(entity_id, "descriptor")
+        if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
+            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset)
+
+    if player_id is not None:
+        player_pos = game.ecs.get_component(player_id, "position")
+        if isinstance(player_pos, Position):
+            _draw_entity(screen, font, tile_size, assets, player_pos, Descriptor("Hero", "@", "royalBlue"), offset)
+
+
 def _draw_entity(
     screen: object,
     font: object,
@@ -135,14 +207,18 @@ def _draw_entity(
     assets: AssetCache,
     position: Position,
     descriptor: Descriptor,
+    offset: tuple[float, float] = (0, 0),
 ) -> None:
+    offset_x, offset_y = offset
+    draw_x = round(position.x * tile_size + offset_x)
+    draw_y = round(position.y * tile_size + offset_y)
     image = assets.sprites.get(descriptor.sprite or "")
     if image is not None:
-        screen.blit(image, (position.x * tile_size, position.y * tile_size))
+        screen.blit(image, (draw_x, draw_y))
         return
 
     glyph = font.render(descriptor.glyph, True, _color_for_descriptor(descriptor.color))
-    screen.blit(glyph, (position.x * tile_size + 8, position.y * tile_size + 4))
+    screen.blit(glyph, (draw_x + 8, draw_y + 4))
 
 
 def _draw_tile_glyph(screen: object, font: object, tile: Tile, rect: object) -> None:
@@ -731,7 +807,9 @@ def _draw_game_over(screen: object, font: object) -> None:
     overlay.fill((0, 0, 0, 150))
     screen.blit(overlay, (0, 0))
 
-    text = font.render("Game Over", True, (255, 90, 90))
-    subtext = font.render("Press R to restart", True, (230, 230, 235))
+    title_font = _font(34)
+    subtext_font = _font(20)
+    text = title_font.render("Game Over", True, (255, 90, 90))
+    subtext = subtext_font.render("Press R to restart", True, (230, 230, 235))
     screen.blit(text, ((width - text.get_width()) // 2, height // 2 - 28))
     screen.blit(subtext, ((width - subtext.get_width()) // 2, height // 2 + 4))

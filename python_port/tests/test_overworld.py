@@ -94,6 +94,9 @@ def test_overworld_edge_movement_changes_and_caches_sections() -> None:
     assert _player_position(game).x == 0
     assert (0, 0) in game.world.overworld_sections
     assert (1, 0) in game.world.overworld_sections
+    assert game.world.overworld_transition is not None
+    assert game.world.overworld_transition.direction == (1, 0)
+    assert game.world.overworld_transition.from_grid is not game.world.overworld_transition.to_grid
     assert _visible_tile_count(game) == game.config.dungeon_width * game.config.dungeon_height
     assert game.world.messages[-1].text == "You travel to another part of the overworld."
 

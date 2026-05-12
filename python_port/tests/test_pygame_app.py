@@ -463,3 +463,42 @@ def test_renderer_draws_overworld_map_overlay() -> None:
         assert screen.get_at((screen.get_width() // 2, 30))[:3] != (12, 12, 18)
     finally:
         pygame.quit()
+
+
+def test_renderer_clears_finished_overworld_transition() -> None:
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    import pygame
+
+    from dungeon_crawler.core import tiles
+    from dungeon_crawler.core.game import Action, Game
+    from dungeon_crawler.core.models import Position
+    from dungeon_crawler.pygame_app.renderer import AssetCache, render
+
+    pygame.init()
+    try:
+        tile_size = 32
+        game = Game()
+        game.new_game(seed=8)
+        player_id = game.world.player_eid
+        assert player_id is not None
+        player_position = game.ecs.get_component(player_id, "position")
+        assert isinstance(player_position, Position)
+        player_position.x = game.config.dungeon_width - 1
+        player_position.y = game.config.dungeon_height // 2
+        game.world.dungeon_grid[player_position.y][player_position.x] = tiles.grass()
+        game.dispatch(Action.move(1, 0))
+        assert game.world.overworld_transition is not None
+        game.world.overworld_transition.start_ms -= game.world.overworld_transition.duration_ms + 1
+
+        screen = pygame.display.set_mode(
+            (game.config.dungeon_width * tile_size, game.config.dungeon_height * tile_size + 156)
+        )
+        font = pygame.font.SysFont("monospace", 20)
+        render(screen, font, game, tile_size, AssetCache())
+
+        assert game.world.overworld_transition is None
+    finally:
+        pygame.quit()

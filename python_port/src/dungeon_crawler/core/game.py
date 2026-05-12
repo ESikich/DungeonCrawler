@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -12,7 +13,15 @@ from .entities import create_monster, create_player
 from .generation import generate_basic_dungeon, generate_basic_overworld
 from .items import create_gold_entity, create_item_entity
 from .monsters import create_from_type, spawn_away_from_player
-from .models import DungeonInstance, DungeonLevelSnapshot, EntitySnapshot, GameState, Position, WorldState
+from .models import (
+    DungeonInstance,
+    DungeonLevelSnapshot,
+    EntitySnapshot,
+    GameState,
+    OverworldTransition,
+    Position,
+    WorldState,
+)
 from .rng import Rng
 from .systems import (
     add_message,
@@ -275,24 +284,30 @@ class Game:
         if player_position is None:
             return False
 
+        old_grid = deepcopy(self.world.dungeon_grid)
         target_x = player_position.x + dx
         target_y = player_position.y + dy
         section_x, section_y = self.world.overworld_section
+        direction = (0, 0)
 
         if target_x < 0:
             section_x -= 1
+            direction = (-1, 0)
             player_position.x = self.config.dungeon_width - 1
             player_position.y = max(0, min(target_y, self.config.dungeon_height - 1))
         elif target_x >= self.config.dungeon_width:
             section_x += 1
+            direction = (1, 0)
             player_position.x = 0
             player_position.y = max(0, min(target_y, self.config.dungeon_height - 1))
         elif target_y < 0:
             section_y -= 1
+            direction = (0, -1)
             player_position.x = max(0, min(target_x, self.config.dungeon_width - 1))
             player_position.y = self.config.dungeon_height - 1
         elif target_y >= self.config.dungeon_height:
             section_y += 1
+            direction = (0, 1)
             player_position.x = max(0, min(target_x, self.config.dungeon_width - 1))
             player_position.y = 0
 
@@ -300,6 +315,13 @@ class Game:
         self._load_overworld_section((section_x, section_y))
         if not self.world.dungeon_grid[player_position.y][player_position.x].walkable:
             self.world.dungeon_grid[player_position.y][player_position.x] = tiles.grass()
+            self._save_current_overworld_section()
+        self.world.overworld_transition = OverworldTransition(
+            from_grid=old_grid,
+            to_grid=deepcopy(self.world.dungeon_grid),
+            direction=direction,
+            start_ms=int(time.monotonic() * 1000),
+        )
         update_vision(self.ecs, self.world, self.config, self.world.player_eid)
         self._reveal_overworld_if_needed()
         add_message(self.world, "You travel to another part of the overworld.", "system")

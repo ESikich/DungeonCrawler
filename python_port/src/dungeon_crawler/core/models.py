@@ -171,6 +171,15 @@ class DungeonInstance:
 
 
 @dataclass(slots=True)
+class OverworldTransition:
+    from_grid: list[list[Tile]]
+    to_grid: list[list[Tile]]
+    direction: Coordinate
+    start_ms: int
+    duration_ms: int = 430
+
+
+@dataclass(slots=True)
 class GameState:
     current: str = "start"
     turn_count: int = 0
@@ -203,3 +212,4 @@ class WorldState:
     stairs_position: Position | None = None
     dungeon_entrance_position: Position | None = None
     overworld_return_position: Position | None = None
+    overworld_transition: OverworldTransition | None = None
