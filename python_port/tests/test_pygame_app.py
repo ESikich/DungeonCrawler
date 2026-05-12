@@ -1,9 +1,13 @@
 def test_pygame_adapter_modules_import_without_initializing_pygame() -> None:
     import dungeon_crawler.pygame_app.app
+    import dungeon_crawler.pygame_app.gl_crt
     import dungeon_crawler.pygame_app.input
     import dungeon_crawler.pygame_app.renderer
+    import dungeon_crawler.pygame_app.crt_tuning_panel
 
     assert dungeon_crawler.pygame_app.app.main is not None
+    assert dungeon_crawler.pygame_app.gl_crt.OpenGLCRTDisplay is not None
+    assert dungeon_crawler.pygame_app.crt_tuning_panel.CRTTuningPanel is not None
 
 
 def test_input_maps_game_actions_and_commands() -> None:
@@ -134,9 +138,31 @@ def test_window_scaling_preserves_logical_aspect_ratio() -> None:
     from dungeon_crawler.pygame_app.app import (
         _aspect_locked_window_size,
         _clamp_window_size,
+        _is_resize_event,
         _logical_size,
+        _resize_event_size,
         _scaled_canvas_rect,
+        _window_size,
     )
+
+    class FakeDisplay:
+        def get_window_size(self) -> tuple[int, int]:
+            return 1280, 720
+
+    class FakePygame:
+        VIDEORESIZE = 1
+        WINDOWRESIZED = 2
+        display = FakeDisplay()
+
+    class FakeScreen:
+        def get_size(self) -> tuple[int, int]:
+            return 800, 700
+
+    class FakeEvent:
+        def __init__(self, event_type: int, **kwargs: int | tuple[int, int]) -> None:
+            self.type = event_type
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
     game = Game()
     assert _logical_size(game, 32) == (800, 700)
@@ -147,15 +173,198 @@ def test_window_scaling_preserves_logical_aspect_ratio() -> None:
     assert _scaled_canvas_rect((800, 700), (1600, 1400)) == (0, 0, 1600, 1400)
     assert _scaled_canvas_rect((800, 700), (1200, 700)) == (200, 0, 800, 700)
     assert _scaled_canvas_rect((800, 700), (800, 1000)) == (0, 150, 800, 700)
+    assert _window_size(FakePygame, FakeScreen()) == (1280, 720)
+    assert _is_resize_event(FakePygame, FakeEvent(FakePygame.WINDOWRESIZED)) is True
+    assert _resize_event_size(FakeEvent(FakePygame.VIDEORESIZE, size=(1024, 768))) == (1024, 768)
+    assert _resize_event_size(FakeEvent(FakePygame.WINDOWRESIZED, x=1024, y=768)) == (1024, 768)
 
 
-def test_crt_effect_matches_js_area_tuning() -> None:
+def test_opengl_crt_uses_browser_container_geometry() -> None:
+    import pytest
+
+    from dungeon_crawler.pygame_app.gl_crt import _crt_container_rect, _game_container_rect
+
+    container = _crt_container_rect((1200, 900))
+    assert container == pytest.approx((129.15, 12.0, 941.7, 876))
+
+    game = _game_container_rect(container)
+    assert game == pytest.approx((
+        container[0] + container[2] * 0.0349,
+        container[1] + container[3] * 0.05,
+        container[2] * (1 - 0.0349 * 2),
+        container[3] * (1 - 0.05 - 0.075),
+    ))
+
+
+def test_opengl_static_noise_matches_js_canvas_shape() -> None:
+    import numpy as np
+
+    from dungeon_crawler.pygame_app.gl_crt import _build_noise_canvas_frame, _noise_canvas_size
+
+    size = _noise_canvas_size((800, 700))
+    frame = _build_noise_canvas_frame(np.random.default_rng(17), size, 0.24, 0.0268)
+
+    assert size == (200, 175)
+    assert frame.shape == (175, 200, 4)
+    assert frame.dtype == np.uint8
+    assert set(np.unique(frame[:, :, 3])).issubset({0, 7})
+    assert np.count_nonzero(frame[:, :, 3]) > 0
+    assert not np.array_equal(frame[:, :, 0], frame[:, :, 1])
+
+
+def test_crt_vignette_darkens_edges_without_brightening_center() -> None:
+    import numpy as np
+
+    from dungeon_crawler.pygame_app.crt import _vignette_multiplier
+
+    u, v = np.meshgrid(
+        np.asarray([0.0, 0.5, 1.0], dtype=np.float32),
+        np.asarray([0.0, 0.5, 1.0], dtype=np.float32),
+        indexing="ij",
+    )
+
+    full = _vignette_multiplier(np, u, v, 1.0)
+    off = _vignette_multiplier(np, u, v, 0.0)
+
+    assert np.allclose(off, 1.0)
+    assert full[0, 0] == 0.0
+    assert 0.95 < full[1, 1] <= 1.0
+    assert full[0, 0] < full[1, 1]
+
+
+def test_screen_glass_overlay_restores_css_radial_layer() -> None:
+    import numpy as np
+
+    from dungeon_crawler.pygame_app.crt import _screen_glass_overlay_alphas
+
+    u, v = np.meshgrid(
+        np.asarray([0.0, 0.5, 1.0], dtype=np.float32),
+        np.asarray([0.0, 0.5, 1.0], dtype=np.float32),
+        indexing="ij",
+    )
+
+    highlight, edge = _screen_glass_overlay_alphas(np, u, v, 0.09, 0.45)
+
+    assert highlight[1, 1] > 0.08
+    assert highlight[0, 0] == 0.0
+    assert edge[1, 1] == 0.0
+    assert edge[0, 0] > 0.0
+
+
+def test_crt_tuning_can_adjust_save_and_load(tmp_path) -> None:
+    from dungeon_crawler.pygame_app.crt_tuning import (
+        CRTTuning,
+        TUNING_KNOBS,
+        adjust_tuning,
+        load_tuning,
+        save_tuning,
+    )
+
+    assert all(knob.name != "shader_noise_strength" for knob in TUNING_KNOBS)
+
+    tuning = CRTTuning()
+    brightness = next(knob for knob in TUNING_KNOBS if knob.name == "brightness_dungeon")
+    curvature = next(knob for knob in TUNING_KNOBS if knob.name == "curvature")
+
+    adjust_tuning(tuning, brightness, -1)
+    adjust_tuning(tuning, curvature, 1)
+
+    path = tmp_path / "crt_tuning.json"
+    save_tuning(path, tuning)
+    loaded = load_tuning(path)
+
+    assert loaded.brightness_dungeon == 1.28
+    assert loaded.curvature is False
+
+
+def test_crt_tuning_hotkeys_adjust_and_save(tmp_path) -> None:
+    from dungeon_crawler.pygame_app.app import _handle_crt_tuning_key
+    from dungeon_crawler.pygame_app.crt_tuning import CRTTuning
+
+    class FakeDisplay:
+        caption = ""
+
+        def set_caption(self, value: str) -> None:
+            self.caption = value
+
+    class FakePygame:
+        KMOD_SHIFT = 1
+        K_F2 = 2
+        K_F3 = 3
+        K_F4 = 4
+        K_F6 = 6
+        K_F7 = 7
+        K_F8 = 8
+        display = FakeDisplay()
+
+    class FakeEvent:
+        def __init__(self, key: int, mod: int = 0) -> None:
+            self.key = key
+            self.mod = mod
+
+    path = tmp_path / "crt_tuning.json"
+    tuning = CRTTuning()
+
+    handled, tuning, index = _handle_crt_tuning_key(FakeEvent(FakePygame.K_F4), FakePygame, tuning, 0, path)
+    assert handled is True
+    assert index == 0
+    assert tuning.brightness_dungeon == 1.32
+
+    handled, tuning, index = _handle_crt_tuning_key(FakeEvent(FakePygame.K_F2), FakePygame, tuning, index, path)
+    assert handled is True
+    assert index == 1
+
+    handled, tuning, index = _handle_crt_tuning_key(FakeEvent(FakePygame.K_F6), FakePygame, tuning, index, path)
+    assert handled is True
+    assert path.exists()
+
+
+def test_crt_tuning_panel_renders_and_saves(tmp_path) -> None:
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    import pygame
+
+    from dungeon_crawler.pygame_app.crt_tuning import CRTTuning
+    from dungeon_crawler.pygame_app.crt_tuning_panel import CRTTuningPanel
+
+    class FakeEvent:
+        def __init__(self, event_type: int, **kwargs) -> None:
+            self.type = event_type
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    pygame.init()
+    try:
+        pygame.display.set_mode((800, 700))
+        tuning = CRTTuning()
+        panel = CRTTuningPanel(visible=True)
+        overlay = panel.render(pygame, pygame.display.get_window_size(), tuning)
+
+        assert overlay is not None
+        assert overlay.get_size() == (800, 700)
+
+        handled, tuning = panel.handle_event(
+            FakeEvent(pygame.MOUSEBUTTONDOWN, button=1, pos=(32, 650)),
+            pygame,
+            tuning,
+            tmp_path / "crt_tuning.json",
+        )
+
+        assert handled is True
+        assert (tmp_path / "crt_tuning.json").exists()
+    finally:
+        pygame.quit()
+
+
+def test_crt_effect_matches_area_brightness_and_saturation() -> None:
     from dungeon_crawler.pygame_app.crt import CRTEffect
 
     effect = CRTEffect((160, 120))
     effect.set_area("overworld")
 
-    assert effect.settings.glow is False
+    assert effect.settings.glow is True
     assert effect.settings.brightness == 1.08
     assert effect.settings.saturation == 1.12
 
@@ -166,7 +375,7 @@ def test_crt_effect_matches_js_area_tuning() -> None:
     assert effect.settings.saturation == 1.3
 
 
-def test_crt_effect_applies_scanlines_and_vignette() -> None:
+def test_crt_effect_applies_scanlines() -> None:
     import os
 
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")

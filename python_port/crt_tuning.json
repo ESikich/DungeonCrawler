@@ -1,0 +1,23 @@
+{
+  "bezel_shadow_strength": 0.7053,
+  "blur_strength": 0.6,
+  "brightness_dungeon": 1.3,
+  "brightness_overworld": 0.66,
+  "contrast": 1.0595,
+  "curvature": true,
+  "glow": true,
+  "glow_strength": 0.3316,
+  "monitor_glow_strength": 0.0,
+  "noise": true,
+  "overlay_scanline_alpha": 0.0579,
+  "saturation_dungeon": 1.3,
+  "saturation_overworld": 1.4211,
+  "scanlines": true,
+  "screen_corner_radius": 11.5263,
+  "screen_edge_shadow_alpha": 0.8,
+  "screen_highlight_alpha": 0.1221,
+  "shader_scanline_strength": 0.0389,
+  "static_alpha": 0.0221,
+  "static_probability": 0.2474,
+  "vignette_strength": 0.4105
+}

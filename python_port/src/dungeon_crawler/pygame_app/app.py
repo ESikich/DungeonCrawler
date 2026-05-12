@@ -12,11 +12,21 @@ from dungeon_crawler.core.serialization import dumps_game, loads_game
 from dungeon_crawler.core.systems import add_message
 
 from .crt import CRTEffect
+from .crt_tuning import (
+    TUNING_KNOBS,
+    adjust_tuning,
+    load_tuning,
+    save_tuning,
+    tuning_summary,
+    tuning_value_text,
+)
+from .crt_tuning_panel import CRTTuningPanel
 from .input import action_from_key, command_from_key
 from .renderer import AssetCache, render
 
 
 SAVE_PATH = Path("savegame.json")
+CRT_TUNING_PATH = Path("crt_tuning.json")
 HUD_HEIGHT = 156
 TILE_SIZE = 32
 MIN_WINDOW_SIZE = (400, 350)
@@ -35,12 +45,17 @@ def main() -> None:
     setup_playable_demo(game)
 
     logical_size = _logical_size(game, tile_size)
-    screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE)
+    screen, gl_display = _create_display(pygame, logical_size)
     canvas = pygame.Surface(logical_size)
     pygame.display.set_caption("Dungeon Crawler Python Port")
     font = pygame.font.SysFont("monospace", 20)
     assets = AssetCache.load(tile_size)
-    crt_effect = CRTEffect(logical_size)
+    crt_effect = None if gl_display is not None else CRTEffect(logical_size)
+    crt_tuning = load_tuning(CRT_TUNING_PATH)
+    crt_tuning_index = 0
+    crt_tuning_panel = CRTTuningPanel(visible=True)
+    _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
+    _announce_crt_tuning(pygame, crt_tuning, crt_tuning_index, prefix="CRT tuning loaded")
     clock = pygame.time.Clock()
     ui_mode = "game"
     inventory_index = 0
@@ -51,10 +66,34 @@ def main() -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.VIDEORESIZE:
-                window_size = _aspect_locked_window_size(event.size, screen.get_size(), logical_size)
-                screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
+            elif _is_resize_event(pygame, event):
+                event_size = _resize_event_size(event)
+                if event_size is None:
+                    continue
+                window_size = _aspect_locked_window_size(event_size, _window_size(pygame, screen), logical_size)
+                screen, gl_display, crt_effect = _resize_display(
+                    pygame,
+                    window_size,
+                    logical_size,
+                    gl_display,
+                    crt_effect,
+                )
+                _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
             elif event.type == pygame.KEYDOWN:
+                handled, crt_tuning = crt_tuning_panel.handle_event(event, pygame, crt_tuning, CRT_TUNING_PATH)
+                if handled:
+                    _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
+                    continue
+                handled, crt_tuning, crt_tuning_index = _handle_crt_tuning_key(
+                    event,
+                    pygame,
+                    crt_tuning,
+                    crt_tuning_index,
+                    CRT_TUNING_PATH,
+                )
+                if handled:
+                    _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
+                    continue
                 if ui_mode == "menu":
                     game, running, ui_mode = _handle_menu_key(
                         event.key,
@@ -74,6 +113,12 @@ def main() -> None:
                 else:
                     game, running, ui_mode, map_view = _handle_game_key(event.key, pygame, game, running, map_view)
                     inventory_index = _clamp_inventory_index(game, inventory_index)
+            elif event.type in {pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION} or (
+                hasattr(pygame, "MOUSEWHEEL") and event.type == pygame.MOUSEWHEEL
+            ):
+                handled, crt_tuning = crt_tuning_panel.handle_event(event, pygame, crt_tuning, CRT_TUNING_PATH)
+                if handled:
+                    _apply_crt_tuning(gl_display, crt_effect, crt_tuning)
 
         render(
             canvas,
@@ -85,8 +130,16 @@ def main() -> None:
             inventory_index=inventory_index,
             map_view=map_view,
         )
-        crt_effect.set_area(game.state.area)
-        _blit_scaled_canvas(pygame, screen, canvas, crt_effect=crt_effect)
+        overlay = crt_tuning_panel.render(pygame, _window_size(pygame, screen), crt_tuning)
+        if gl_display is not None:
+            gl_display.set_area(game.state.area)
+            gl_display.present(canvas, _window_size(pygame, screen), overlay=overlay)
+        else:
+            assert crt_effect is not None
+            crt_effect.set_area(game.state.area)
+            _blit_scaled_canvas(pygame, screen, canvas, crt_effect=crt_effect)
+            if overlay is not None:
+                screen.blit(overlay, (0, 0))
         pygame.display.flip()
         clock.tick(30)
 
@@ -95,6 +148,123 @@ def main() -> None:
 
 def _logical_size(game: Game, tile_size: int) -> tuple[int, int]:
     return game.config.dungeon_width * tile_size, game.config.dungeon_height * tile_size + HUD_HEIGHT
+
+
+def _apply_crt_tuning(gl_display: object | None, crt_effect: object | None, tuning: object) -> None:
+    if gl_display is not None:
+        gl_display.apply_tuning(tuning)
+    if crt_effect is not None and hasattr(crt_effect, "apply_tuning"):
+        crt_effect.apply_tuning(tuning)
+
+
+def _handle_crt_tuning_key(
+    event: object,
+    pygame: object,
+    tuning: object,
+    tuning_index: int,
+    path: Path,
+) -> tuple[bool, object, int]:
+    knob = TUNING_KNOBS[tuning_index]
+
+    if event.key == pygame.K_F2:
+        direction = -1 if getattr(event, "mod", 0) & pygame.KMOD_SHIFT else 1
+        tuning_index = (tuning_index + direction) % len(TUNING_KNOBS)
+        _announce_crt_tuning(pygame, tuning, tuning_index, prefix="CRT knob")
+        return True, tuning, tuning_index
+
+    if event.key == pygame.K_F3:
+        adjust_tuning(tuning, knob, -1)
+        _announce_crt_tuning(pygame, tuning, tuning_index, prefix="CRT adjusted")
+        return True, tuning, tuning_index
+
+    if event.key == pygame.K_F4:
+        adjust_tuning(tuning, knob, 1)
+        _announce_crt_tuning(pygame, tuning, tuning_index, prefix="CRT adjusted")
+        return True, tuning, tuning_index
+
+    if event.key == pygame.K_F6:
+        save_tuning(path, tuning)
+        print(f"Saved CRT tuning to {path}: {tuning_summary(tuning)}")
+        return True, tuning, tuning_index
+
+    if event.key == pygame.K_F7:
+        tuning = load_tuning(path)
+        _announce_crt_tuning(pygame, tuning, tuning_index, prefix=f"Reloaded {path}")
+        return True, tuning, tuning_index
+
+    if event.key == pygame.K_F8:
+        print("CRT tuning controls: F2 next knob, Shift+F2 previous, F3/F4 adjust or toggle, F6 save, F7 reload, F8 print.")
+        print(f"Current CRT tuning: {tuning_summary(tuning)}")
+        _announce_crt_tuning(pygame, tuning, tuning_index, prefix="CRT tuning")
+        return True, tuning, tuning_index
+
+    return False, tuning, tuning_index
+
+
+def _announce_crt_tuning(pygame: object, tuning: object, tuning_index: int, *, prefix: str) -> None:
+    knob = TUNING_KNOBS[tuning_index]
+    value = tuning_value_text(tuning, knob)
+    message = f"{prefix}: {knob.label} = {value}"
+    pygame.display.set_caption(f"Dungeon Crawler Python Port - {knob.label}: {value}")
+    print(message)
+
+
+def _window_size(pygame: object, screen: object) -> tuple[int, int]:
+    get_window_size = getattr(pygame.display, "get_window_size", None)
+    if get_window_size is not None:
+        return get_window_size()
+    return screen.get_size()
+
+
+def _is_resize_event(pygame: object, event: object) -> bool:
+    event_types = {pygame.VIDEORESIZE}
+    for name in ("WINDOWRESIZED", "WINDOWSIZECHANGED"):
+        value = getattr(pygame, name, None)
+        if value is not None:
+            event_types.add(value)
+    return event.type in event_types
+
+
+def _resize_event_size(event: object) -> tuple[int, int] | None:
+    if hasattr(event, "size"):
+        return event.size
+    if hasattr(event, "x") and hasattr(event, "y"):
+        return event.x, event.y
+    return None
+
+
+def _create_display(pygame: object, logical_size: tuple[int, int]) -> tuple[object, object | None]:
+    try:
+        from .gl_crt import OpenGLCRTDisplay
+
+        pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
+        screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE | pygame.OPENGL | pygame.DOUBLEBUF)
+        return screen, OpenGLCRTDisplay(pygame, logical_size)
+    except Exception as exc:
+        print(f"OpenGL CRT unavailable, using software CRT: {exc}")
+        screen = pygame.display.set_mode(logical_size, pygame.RESIZABLE)
+        return screen, None
+
+
+def _resize_display(
+    pygame: object,
+    window_size: tuple[int, int],
+    logical_size: tuple[int, int],
+    gl_display: object | None,
+    crt_effect: object | None,
+) -> tuple[object, object | None, object | None]:
+    if gl_display is None:
+        return pygame.display.set_mode(window_size, pygame.RESIZABLE), None, crt_effect
+
+    try:
+        from .gl_crt import OpenGLCRTDisplay
+
+        screen = pygame.display.set_mode(window_size, pygame.RESIZABLE | pygame.OPENGL | pygame.DOUBLEBUF)
+        return screen, OpenGLCRTDisplay(pygame, logical_size), None
+    except Exception as exc:
+        print(f"OpenGL CRT resize failed, using software CRT: {exc}")
+        screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
+        return screen, None, CRTEffect(logical_size)
 
 
 def _clamp_window_size(size: tuple[int, int]) -> tuple[int, int]:
@@ -139,13 +309,22 @@ def _blit_scaled_canvas(
     *,
     crt_effect: object | None = None,
 ) -> None:
-    presented = crt_effect.apply(canvas) if crt_effect is not None else canvas
+    ticks = pygame.time.get_ticks()
+    if crt_effect is not None and hasattr(crt_effect, "apply_shader") and hasattr(crt_effect, "apply_post_draw"):
+        presented = crt_effect.apply_shader(canvas, ticks=ticks)
+    else:
+        presented = crt_effect.apply(canvas) if crt_effect is not None else canvas
+
     rect = _scaled_canvas_rect(presented.get_size(), screen.get_size())
     screen.fill((0, 0, 0))
     if rect[2:] == presented.get_size():
-        screen.blit(presented, (rect[0], rect[1]))
-        return
-    scaled = pygame.transform.scale(presented, rect[2:])
+        scaled = presented
+    else:
+        scaled = pygame.transform.scale(presented, rect[2:])
+
+    if crt_effect is not None and hasattr(crt_effect, "apply_shader") and hasattr(crt_effect, "apply_post_draw"):
+        scaled = crt_effect.apply_post_draw(scaled, ticks=ticks)
+
     screen.blit(scaled, rect[:2])
 
 

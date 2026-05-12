@@ -42,6 +42,8 @@ To run the pygame adapter:
 python3 -m pip install -e .[pygame]
 ```
 
+The pygame adapter uses an OpenGL CRT presenter when available, with a software CRT fallback for machines that cannot create a GL context.
+
 On Windows, use a Python version with prebuilt pygame wheels, typically 64-bit Python 3.11 or 3.12. If pip tries to download `pygame-*.tar.gz` and build from source, switch to one of those Python versions instead of compiling pygame locally:
 
 ```bat
@@ -62,6 +64,8 @@ python3 -m dungeon_crawler.pygame_app
 ## Pygame Controls
 
 Move with `WASD` or arrow keys. Walk off an overworld edge to enter the next section, step onto the dungeon entrance sprite to enter a dungeon, `>` to descend, and `<` to climb back up or exit. `Space` waits, `I` opens inventory, `M` opens the overworld map, `Esc` opens the menu, `R` restarts, `F5` saves to `savegame.json`, and `F9` loads it. In inventory, use arrow keys to select, `Enter` to use, and `D` to drop. On the map, use `WASD` or arrows to pan visited chunks and `M` or `Esc` to close. The pygame window is resizable, but snaps back to the original JS-layout aspect ratio while scaling the logical canvas.
+
+CRT tuning opens as an on-screen panel while the pygame adapter is running. Drag the sliders, click toggles, and use the panel buttons to save, reload, or hide the current settings. `Save` writes `crt_tuning.json`; `Reload` reads it back; `F1` shows or hides the panel. Keyboard tuning shortcuts are still available: `F2` selects the next CRT knob, `Shift+F2` selects the previous knob, `F3`/`F4` decrease/increase or toggle the selected value, `F6` saves, `F7` reloads, and `F8` prints all current values.
 
 ## Start Here
 
