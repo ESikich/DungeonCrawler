@@ -16,6 +16,7 @@ from .models import (
     DungeonInstance,
     DungeonLevelSnapshot,
     EntitySnapshot,
+    ForestReturnContext,
     GameState,
     Health,
     Inventory,
@@ -287,6 +288,12 @@ def _world_to_dict(world: WorldState) -> dict[str, Any]:
         "overworld_return_position": (
             _position_to_dict(world.overworld_return_position) if world.overworld_return_position else None
         ),
+        "forest_return_section": list(world.forest_return_section) if world.forest_return_section else None,
+        "forest_return_position": (
+            _position_to_dict(world.forest_return_position) if world.forest_return_position else None
+        ),
+        "forest_tree_position": _position_to_dict(world.forest_tree_position) if world.forest_tree_position else None,
+        "forest_return_stack": [_forest_return_context_to_dict(context) for context in world.forest_return_stack],
     }
 
 
@@ -295,6 +302,10 @@ def _world_from_dict(data: dict[str, Any]) -> WorldState:
     stairs_position = data.get("stairs_position")
     dungeon_entrance_position = data.get("dungeon_entrance_position")
     overworld_return_position = data.get("overworld_return_position")
+    forest_return_section = data.get("forest_return_section")
+    forest_return_position = data.get("forest_return_position")
+    forest_tree_position = data.get("forest_tree_position")
+    forest_return_stack = data.get("forest_return_stack", [])
     overworld_section = data.get("overworld_section", [0, 0])
     world = WorldState(
         dungeon_grid=[[_tile_from_dict(tile) for tile in row] for row in data["dungeon_grid"]],
@@ -324,10 +335,39 @@ def _world_from_dict(data: dict[str, Any]) -> WorldState:
         overworld_return_position=(
             _position_from_dict(overworld_return_position) if overworld_return_position is not None else None
         ),
+        forest_return_section=(
+            (int(forest_return_section[0]), int(forest_return_section[1]))
+            if forest_return_section is not None
+            else None
+        ),
+        forest_return_position=(
+            _position_from_dict(forest_return_position) if forest_return_position is not None else None
+        ),
+        forest_tree_position=(
+            _position_from_dict(forest_tree_position) if forest_tree_position is not None else None
+        ),
+        forest_return_stack=[_forest_return_context_from_dict(context) for context in forest_return_stack],
     )
     if world.active_dungeon_id is not None and world.active_dungeon_id in world.dungeons:
         world.dungeon_levels = world.dungeons[world.active_dungeon_id].levels
     return world
+
+
+def _forest_return_context_to_dict(context: ForestReturnContext) -> dict[str, Any]:
+    return {
+        "section": list(context.section) if context.section else None,
+        "position": _position_to_dict(context.position) if context.position else None,
+        "tree_position": _position_to_dict(context.tree_position) if context.tree_position else None,
+    }
+
+
+def _forest_return_context_from_dict(data: dict[str, Any]) -> ForestReturnContext:
+    section = data.get("section")
+    return ForestReturnContext(
+        section=(int(section[0]), int(section[1])) if section is not None else None,
+        position=_position_from_dict(data["position"]) if data.get("position") is not None else None,
+        tree_position=_position_from_dict(data["tree_position"]) if data.get("tree_position") is not None else None,
+    )
 
 
 def _dungeon_level_to_dict(snapshot: DungeonLevelSnapshot) -> dict[str, Any]:

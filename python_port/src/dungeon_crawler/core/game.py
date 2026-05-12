@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from copy import deepcopy
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from . import tiles
 from .config import GameConfig
 from .ecs import ECS
 from .entities import create_monster, create_player
-from .generation import generate_basic_dungeon, generate_basic_overworld
+from .generation import apply_overworld_tile_rules, generate_basic_dungeon, generate_basic_overworld
 from .items import create_gold_entity, create_item_entity
 from .monsters import create_from_type, spawn_away_from_player
 from .models import (
@@ -18,8 +19,10 @@ from .models import (
     DungeonLevelSnapshot,
     EntitySnapshot,
     GameState,
+    ForestReturnContext,
     OverworldTransition,
     Position,
+    Tile,
     WorldState,
 )
 from .rng import Rng
@@ -33,6 +36,10 @@ from .systems import (
     update_vision,
     use_inventory_item,
 )
+
+
+FOREST_SECTION_OFFSET = 1_000_000
+MAX_FOREST_DEPTH = 4
 
 
 @dataclass(slots=True, frozen=True)
@@ -113,8 +120,20 @@ class Game:
         position_before = self._player_position_tuple()
 
         if action.kind == "move":
-            if self.state.area == "overworld" and self._move_leaves_overworld(action.dx, action.dy):
-                consumed_turn = self._change_overworld_section(action.dx, action.dy)
+            if (
+                self.state.area == "overworld"
+                and self._move_targets_tree(action.dx, action.dy)
+            ):
+                if self._forest_depth() >= MAX_FOREST_DEPTH:
+                    add_message(self.world, "The trees are too dense to enter.", "blocked")
+                    consumed_turn = True
+                else:
+                    consumed_turn = self._enter_forest_chunk(action.dx, action.dy)
+            elif self.state.area == "overworld" and self._move_leaves_overworld(action.dx, action.dy):
+                if self.world.forest_return_section is not None:
+                    consumed_turn = self._exit_forest_chunk(action.dx, action.dy)
+                else:
+                    consumed_turn = self._change_overworld_section(action.dx, action.dy)
             else:
                 consumed_turn = resolve_move(
                     self.ecs,
@@ -277,13 +296,423 @@ class Game:
             return False
         target_x = player_position.x + dx
         target_y = player_position.y + dy
-        return not self.config.in_bounds(target_x, target_y)
+        return not self._active_in_bounds(target_x, target_y)
+
+    def _move_targets_tree(self, dx: int, dy: int) -> bool:
+        player_position = self._player_position()
+        if player_position is None:
+            return False
+        target_x = player_position.x + dx
+        target_y = player_position.y + dy
+        if not self._active_in_bounds(target_x, target_y):
+            return False
+        return self.world.dungeon_grid[target_y][target_x].special == "tree"
+
+    def _enter_forest_chunk(self, dx: int, dy: int) -> bool:
+        player_position = self._player_position()
+        if player_position is None:
+            return False
+
+        target_x = player_position.x + dx
+        target_y = player_position.y + dy
+        if not self._active_in_bounds(target_x, target_y):
+            return False
+
+        return self._enter_forest_at_tree(
+            target_x,
+            target_y,
+            dx,
+            dy,
+            from_grid=deepcopy(self.world.dungeon_grid),
+            return_section=self.world.overworld_section,
+            return_position=Position(player_position.x, player_position.y),
+        )
+
+    def _enter_forest_at_tree(
+        self,
+        tree_x: int,
+        tree_y: int,
+        dx: int,
+        dy: int,
+        *,
+        from_grid: list[list[Tile]],
+        return_section: tuple[int, int],
+        return_position: Position,
+    ) -> bool:
+        player_position = self._player_position()
+        if player_position is None:
+            return False
+        if self._forest_depth() >= MAX_FOREST_DEPTH:
+            add_message(self.world, "The trees are too dense to enter.", "blocked")
+            return True
+
+        forest_section = self._forest_section_for(return_section, tree_x, tree_y)
+        self._save_current_overworld_section()
+        self._push_forest_return_context()
+        self.world.overworld_section = forest_section
+        cached = self.world.overworld_sections.get(forest_section)
+        self.world.dungeon_grid = (
+            deepcopy(cached) if cached is not None else self._generate_forest_grid(return_section, tree_x, tree_y)
+        )
+        self.world.overworld_sections[forest_section] = deepcopy(self.world.dungeon_grid)
+        self.world.forest_return_section = return_section
+        self.world.forest_return_position = return_position
+        self.world.forest_tree_position = Position(tree_x, tree_y)
+        width = self._active_grid_width()
+        height = self._active_grid_height()
+        parent_width = len(from_grid[0]) if from_grid else self.config.dungeon_width
+        parent_height = len(from_grid) if from_grid else self.config.dungeon_height
+        entry_x = self._scale_grid_coordinate(tree_x, parent_width, width)
+        entry_y = self._scale_grid_coordinate(tree_y, parent_height, height)
+
+        if dx > 0:
+            player_position.x = 0
+            player_position.y = entry_y
+        elif dx < 0:
+            player_position.x = width - 1
+            player_position.y = entry_y
+        elif dy > 0:
+            player_position.x = entry_x
+            player_position.y = 0
+        else:
+            player_position.x = entry_x
+            player_position.y = height - 1
+
+        self._ensure_player_tile_walkable(player_position)
+        self.world.overworld_transition = OverworldTransition(
+            from_grid=from_grid,
+            to_grid=deepcopy(self.world.dungeon_grid),
+            direction=(dx, dy),
+            start_ms=int(time.monotonic() * 1000),
+        )
+        update_vision(self.ecs, self.world, self.config, self.world.player_eid)
+        self._reveal_overworld_if_needed()
+        add_message(self.world, "You push into the trees...", "system")
+        return True
+
+    def _forest_depth(self) -> int:
+        if self.world.forest_return_section is None:
+            return 0
+        return 1 + len(self.world.forest_return_stack)
+
+    def _exit_forest_chunk(self, dx: int, dy: int) -> bool:
+        player_position = self._player_position()
+        if player_position is None or self.world.forest_return_section is None:
+            return False
+
+        current_section = self.world.overworld_section
+        current_position = Position(player_position.x, player_position.y)
+        old_grid = deepcopy(self.world.dungeon_grid)
+        return_section, return_position = self._forest_exit_destination(dx, dy)
+        self._save_current_overworld_section()
+        self._load_overworld_section(return_section)
+        return_position.x = min(max(return_position.x, 0), self._active_grid_width() - 1)
+        return_position.y = min(max(return_position.y, 0), self._active_grid_height() - 1)
+
+        if self.world.dungeon_grid[return_position.y][return_position.x].special == "tree":
+            self._pop_forest_return_context()
+            return self._enter_forest_at_tree(
+                return_position.x,
+                return_position.y,
+                dx,
+                dy,
+                from_grid=old_grid,
+                return_section=return_section,
+                return_position=Position(return_position.x - dx, return_position.y - dy),
+            )
+
+        if not self.world.dungeon_grid[return_position.y][return_position.x].walkable:
+            self.world.overworld_section = current_section
+            self.world.dungeon_grid = old_grid
+            player_position.x = current_position.x
+            player_position.y = current_position.y
+            add_message(self.world, "That space is blocked.", "blocked")
+            return True
+
+        self._pop_forest_return_context()
+        player_position.x = min(max(return_position.x, 0), self._active_grid_width() - 1)
+        player_position.y = min(max(return_position.y, 0), self._active_grid_height() - 1)
+
+        self.world.overworld_transition = OverworldTransition(
+            from_grid=old_grid,
+            to_grid=deepcopy(self.world.dungeon_grid),
+            direction=(dx, dy),
+            start_ms=int(time.monotonic() * 1000),
+        )
+        update_vision(self.ecs, self.world, self.config, self.world.player_eid)
+        self._reveal_overworld_if_needed()
+        add_message(self.world, "You emerge from the forest.", "system")
+        return True
+
+    def _push_forest_return_context(self) -> None:
+        if (
+            self.world.forest_return_section is None
+            and self.world.forest_return_position is None
+            and self.world.forest_tree_position is None
+        ):
+            return
+
+        self.world.forest_return_stack.append(
+            ForestReturnContext(
+                section=self.world.forest_return_section,
+                position=deepcopy(self.world.forest_return_position),
+                tree_position=deepcopy(self.world.forest_tree_position),
+            )
+        )
+
+    def _pop_forest_return_context(self) -> None:
+        if not self.world.forest_return_stack:
+            self.world.forest_return_section = None
+            self.world.forest_return_position = None
+            self.world.forest_tree_position = None
+            return
+
+        context = self.world.forest_return_stack.pop()
+        self.world.forest_return_section = context.section
+        self.world.forest_return_position = context.position
+        self.world.forest_tree_position = context.tree_position
+
+    def _forest_exit_destination(self, dx: int, dy: int) -> tuple[tuple[int, int], Position]:
+        tree_section = self.world.forest_return_section
+        tree_position = self.world.forest_tree_position
+        fallback = self.world.forest_return_position or Position(0, 0)
+        if tree_section is None:
+            return self.world.overworld_section, fallback
+        if tree_position is None:
+            return tree_section, fallback
+
+        candidate = Position(tree_position.x + dx, tree_position.y + dy)
+        if self._section_position_in_bounds(tree_section, candidate.x, candidate.y):
+            return tree_section, candidate
+
+        section_x, section_y = tree_section
+        if candidate.x < 0:
+            return (section_x - 1, section_y), Position(self.config.dungeon_width - 1, max(0, min(candidate.y, self.config.dungeon_height - 1)))
+        if candidate.x >= self._section_width(tree_section):
+            return (section_x + 1, section_y), Position(0, max(0, min(candidate.y, self.config.dungeon_height - 1)))
+        if candidate.y < 0:
+            return (section_x, section_y - 1), Position(max(0, min(candidate.x, self.config.dungeon_width - 1)), self.config.dungeon_height - 1)
+        if candidate.y >= self._section_height(tree_section):
+            return (section_x, section_y + 1), Position(max(0, min(candidate.x, self.config.dungeon_width - 1)), 0)
+        return tree_section, fallback
+
+    def _ensure_player_tile_walkable(self, player_position: Position) -> None:
+        if not self.world.dungeon_grid[player_position.y][player_position.x].walkable:
+            self.world.dungeon_grid[player_position.y][player_position.x] = tiles.dark_grass()
+
+    def _active_in_bounds(self, x: int, y: int) -> bool:
+        return 0 <= y < self._active_grid_height() and 0 <= x < self._active_grid_width()
+
+    def _active_grid_width(self) -> int:
+        return len(self.world.dungeon_grid[0]) if self.world.dungeon_grid else self.config.dungeon_width
+
+    def _active_grid_height(self) -> int:
+        return len(self.world.dungeon_grid) if self.world.dungeon_grid else self.config.dungeon_height
+
+    def _scale_grid_coordinate(self, value: int, source_size: int, target_size: int) -> int:
+        if source_size <= 0 or target_size <= 1:
+            return 0
+        return min(max(0, math.floor((value + 0.5) * target_size / source_size)), target_size - 1)
+
+    def _section_position_in_bounds(self, section: tuple[int, int], x: int, y: int) -> bool:
+        return 0 <= x < self._section_width(section) and 0 <= y < self._section_height(section)
+
+    def _section_width(self, section: tuple[int, int]) -> int:
+        grid = self.world.overworld_sections.get(section)
+        return len(grid[0]) if grid else self.config.dungeon_width
+
+    def _section_height(self, section: tuple[int, int]) -> int:
+        grid = self.world.overworld_sections.get(section)
+        return len(grid) if grid else self.config.dungeon_height
+
+    def _forest_section_for(self, section: tuple[int, int], tree_x: int, tree_y: int) -> tuple[int, int]:
+        return (
+            FOREST_SECTION_OFFSET + section[0] * self.config.dungeon_width + tree_x,
+            FOREST_SECTION_OFFSET + section[1] * self.config.dungeon_height + tree_y,
+        )
+
+    def _generate_forest_grid(self, parent_section: tuple[int, int], tree_x: int, tree_y: int) -> list[list[Tile]]:
+        salt = (
+            self.world.overworld_seed
+            + parent_section[0] * 92821
+            + parent_section[1] * 68917
+            + tree_x * 197
+            + tree_y * 389
+        )
+        ratios = self._forest_neighbor_ratios(parent_section, tree_x, tree_y)
+        tree_threshold = 18 + round(ratios.get("tree", 0) * 30)
+        water_ratio = ratios.get("water", 0)
+        rock_ratio = ratios.get("rock", 0)
+        sand_ratio = ratios.get("sand", 0)
+        width, height = self._forest_grid_size()
+        grid = [[tiles.dark_grass() for _x in range(width)] for _y in range(height)]
+        for y in range(height):
+            for x in range(width):
+                edge = x == 0 or y == 0 or x == width - 1 or y == height - 1
+                noise = (salt + x * 37 + y * 53 + x * y * 17) % 100
+                if edge and noise < 56 + round(ratios.get("tree", 0) * 22):
+                    grid[y][x] = tiles.tree()
+                elif noise < tree_threshold:
+                    grid[y][x] = tiles.tree()
+                elif noise < tree_threshold + 9 + round(ratios.get("grass", 0) * 8):
+                    grid[y][x] = tiles.light_grass()
+        self._apply_forest_patch(grid, "water", water_ratio, salt + 1100)
+        self._apply_forest_patch(grid, "rock", rock_ratio, salt + 2200)
+        self._apply_forest_patch(grid, "sand", sand_ratio, salt + 3300)
+        apply_overworld_tile_rules(self.config, grid)
+        self._apply_forest_edge_constraints(grid, parent_section, tree_x, tree_y)
+        return grid
+
+    def _apply_forest_edge_constraints(
+        self,
+        grid: list[list[Tile]],
+        parent_section: tuple[int, int],
+        tree_x: int,
+        tree_y: int,
+    ) -> None:
+        if not grid or not grid[0]:
+            return
+
+        width = len(grid[0])
+        height = len(grid)
+        edges = (
+            ((-1, 0), [(0, y) for y in range(height)]),
+            ((1, 0), [(width - 1, y) for y in range(height)]),
+            ((0, -1), [(x, 0) for x in range(width)]),
+            ((0, 1), [(x, height - 1) for x in range(width)]),
+        )
+
+        for (dx, dy), cells in edges:
+            neighbor = self._forest_parent_tile_at(parent_section, tree_x + dx, tree_y + dy)
+            if neighbor.walkable and neighbor.special != "tree":
+                continue
+            for x, y in cells:
+                grid[y][x] = deepcopy(neighbor)
+
+    def _forest_grid_size(self) -> tuple[int, int]:
+        depth = 1 + len(self.world.forest_return_stack)
+        scale = 2 ** max(0, depth - 1)
+        width = max(3, math.ceil(self.config.dungeon_width / scale))
+        height = max(3, math.ceil(self.config.dungeon_height / scale))
+        if width % 2 == 0:
+            width += 1
+        if height % 2 == 0:
+            height += 1
+        return width, height
+
+    def _apply_forest_patch(self, grid: list[list[Tile]], category: str, ratio: float, salt: int) -> None:
+        if ratio <= 0:
+            return
+
+        width = len(grid[0]) if grid else 0
+        height = len(grid)
+        target_size = max(2, round(ratio * width * height * 0.16))
+        start_x = 2 + salt % max(1, width - 4)
+        start_y = 2 + (salt // 7) % max(1, height - 4)
+        frontier = [(start_x, start_y)]
+        painted: set[tuple[int, int]] = set()
+
+        while frontier and len(painted) < target_size:
+            index = (salt + len(painted) * 11) % len(frontier)
+            x, y = frontier.pop(index)
+            if (x, y) in painted or not (0 <= x < width and 0 <= y < height):
+                continue
+            if x in {0, width - 1} or y in {0, height - 1}:
+                continue
+            if grid[y][x].special == "tree" and len(painted) > target_size // 3:
+                continue
+
+            grid[y][x] = self._forest_patch_tile(category, salt + x * 31 + y * 43)
+            painted.add((x, y))
+
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx = x + dx
+                ny = y + dy
+                if (nx, ny) not in painted and 0 <= nx < width and 0 <= ny < height:
+                    frontier.append((nx, ny))
+
+    def _forest_patch_tile(self, category: str, salt: int) -> Tile:
+        if category == "water":
+            return tiles.water()
+        if category == "rock":
+            return tiles.rock()
+        if category == "sand":
+            return tiles.sand()
+        return tiles.light_grass()
+
+    def _forest_neighbor_ratios(self, section: tuple[int, int], tree_x: int, tree_y: int) -> dict[str, float]:
+        counts: dict[str, int] = {}
+        total = 0
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                tile = self._forest_parent_tile_at(section, tree_x + dx, tree_y + dy)
+                category = self._forest_tile_category(tile)
+                counts[category] = counts.get(category, 0) + 1
+                total += 1
+        if total == 0:
+            return {}
+        return {category: count / total for category, count in counts.items()}
+
+    def _forest_parent_tile_at(self, section: tuple[int, int], x: int, y: int) -> Tile:
+        grid = self.world.overworld_sections.get(section)
+        if grid is not None:
+            if 0 <= y < len(grid) and 0 <= x < len(grid[y]):
+                return self._forest_sample_tile(grid[y][x])
+            if self._is_forest_section(section):
+                return tiles.tree()
+        return self._forest_sample_tile(self._overworld_tile_at(section, x, y))
+
+    def _forest_sample_tile(self, tile: Tile) -> Tile:
+        if tile.special == "ocean":
+            return tiles.shallow_water() if tile.walkable else tiles.water()
+        return tile
+
+    def _is_forest_section(self, section: tuple[int, int]) -> bool:
+        return section[0] >= FOREST_SECTION_OFFSET or section[1] >= FOREST_SECTION_OFFSET
+
+    def _overworld_tile_at(self, section: tuple[int, int], x: int, y: int) -> Tile:
+        section_x, section_y = section
+        while x < 0:
+            section_x -= 1
+            x += self._section_width((section_x, section_y))
+        while x >= self._section_width((section_x, section_y)):
+            x -= self._section_width((section_x, section_y))
+            section_x += 1
+        while y < 0:
+            section_y -= 1
+            y += self._section_height((section_x, section_y))
+        while y >= self._section_height((section_x, section_y)):
+            y -= self._section_height((section_x, section_y))
+            section_y += 1
+
+        normalized_section = (section_x, section_y)
+        grid = self.world.overworld_sections.get(normalized_section)
+        if grid is None:
+            generated = generate_basic_overworld(self.config, section=normalized_section, seed=self.world.overworld_seed)
+            grid = generated.grid
+            self.world.overworld_sections[normalized_section] = deepcopy(grid)
+        return grid[y][x]
+
+    def _forest_tile_category(self, tile: Tile) -> str:
+        if tile.special == "tree":
+            return "tree"
+        if tile.special == "rock":
+            return "rock"
+        if tile.special == "sand":
+            return "sand"
+        if tile.special in {"water", "ocean"}:
+            return "water"
+        return "grass"
 
     def _change_overworld_section(self, dx: int, dy: int) -> bool:
         player_position = self._player_position()
         if player_position is None:
             return False
 
+        previous_section = self.world.overworld_section
+        previous_position = Position(player_position.x, player_position.y)
         old_grid = deepcopy(self.world.dungeon_grid)
         target_x = player_position.x + dx
         target_y = player_position.y + dy
@@ -313,9 +742,23 @@ class Game:
 
         self._save_current_overworld_section()
         self._load_overworld_section((section_x, section_y))
+        if self.world.dungeon_grid[player_position.y][player_position.x].special == "tree":
+            return self._enter_forest_at_tree(
+                player_position.x,
+                player_position.y,
+                dx,
+                dy,
+                from_grid=old_grid,
+                return_section=(section_x, section_y),
+                return_position=Position(player_position.x - dx, player_position.y - dy),
+            )
         if not self.world.dungeon_grid[player_position.y][player_position.x].walkable:
-            self.world.dungeon_grid[player_position.y][player_position.x] = tiles.grass()
-            self._save_current_overworld_section()
+            self.world.overworld_section = previous_section
+            self.world.dungeon_grid = old_grid
+            player_position.x = previous_position.x
+            player_position.y = previous_position.y
+            add_message(self.world, "That space is blocked.", "blocked")
+            return True
         self.world.overworld_transition = OverworldTransition(
             from_grid=old_grid,
             to_grid=deepcopy(self.world.dungeon_grid),

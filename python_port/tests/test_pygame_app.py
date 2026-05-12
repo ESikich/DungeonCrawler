@@ -502,3 +502,89 @@ def test_renderer_clears_finished_overworld_transition() -> None:
         assert game.world.overworld_transition is None
     finally:
         pygame.quit()
+
+
+def test_renderer_centers_smaller_tree_chunks_with_black_margins() -> None:
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    import pygame
+
+    from dungeon_crawler.core import tiles
+    from dungeon_crawler.core.game import Game
+    from dungeon_crawler.core.models import Vision
+    from dungeon_crawler.pygame_app.renderer import AssetCache, render
+
+    pygame.init()
+    try:
+        tile_size = 32
+        game = Game()
+        game.new_game(seed=9)
+        game.world.dungeon_grid = [[tiles.light_grass() for _x in range(3)] for _y in range(3)]
+        player_id = game.world.player_eid
+        assert player_id is not None
+        vision = game.ecs.get_component(player_id, "vision")
+        assert isinstance(vision, Vision)
+        vision.visible = {(x, y) for y in range(3) for x in range(3)}
+        vision.seen = set(vision.visible)
+        screen = pygame.display.set_mode(
+            (game.config.dungeon_width * tile_size, game.config.dungeon_height * tile_size + 156)
+        )
+        font = pygame.font.SysFont("monospace", 20)
+
+        render(screen, font, game, tile_size, AssetCache())
+
+        world_width = game.config.dungeon_width * tile_size
+        world_height = game.config.dungeon_height * tile_size
+        assert screen.get_at((world_width // 2, world_height // 2))[:3] == tiles.light_grass().color
+        assert screen.get_at((2, 2))[:3] == (12, 12, 18)
+        assert screen.get_at((world_width - 2, world_height - 2))[:3] == (12, 12, 18)
+    finally:
+        pygame.quit()
+
+
+def test_renderer_keeps_tree_chunk_tile_size_when_board_shrinks() -> None:
+    import os
+
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+    import pygame
+
+    from dungeon_crawler.core import tiles
+    from dungeon_crawler.core.game import Game
+    from dungeon_crawler.core.models import Vision
+    from dungeon_crawler.pygame_app.renderer import AssetCache, render
+
+    pygame.init()
+    try:
+        tile_size = 32
+        game = Game()
+        game.new_game(seed=9)
+        game.world.dungeon_grid = [[tiles.light_grass() for _x in range(13)] for _y in range(9)]
+        player_id = game.world.player_eid
+        assert player_id is not None
+        vision = game.ecs.get_component(player_id, "vision")
+        assert isinstance(vision, Vision)
+        vision.visible = {(x, y) for y in range(15) for x in range(23)}
+        vision.seen = set(vision.visible)
+        screen = pygame.display.set_mode(
+            (game.config.dungeon_width * tile_size, game.config.dungeon_height * tile_size + 156)
+        )
+        font = pygame.font.SysFont("monospace", 20)
+
+        render(screen, font, game, tile_size, AssetCache())
+
+        world_height = game.config.dungeon_height * tile_size
+        world_width = game.config.dungeon_width * tile_size
+        board_width = 13 * tile_size
+        board_height = 9 * tile_size
+        origin_x = (world_width - board_width) // 2
+        origin_y = (world_height - board_height) // 2
+
+        assert screen.get_at((origin_x - 1, origin_y + tile_size // 2))[:3] == (12, 12, 18)
+        assert screen.get_at((origin_x, origin_y))[:3] == tiles.light_grass().color
+        assert screen.get_at((origin_x + tile_size - 1, origin_y + tile_size - 1))[:3] == tiles.light_grass().color
+        assert screen.get_at((origin_x + tile_size, origin_y))[:3] == tiles.light_grass().color
+    finally:
+        pygame.quit()

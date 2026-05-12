@@ -70,29 +70,34 @@ def render(
 ) -> None:
     pygame = _pygame()
     screen.fill((12, 12, 18))
-    width = screen.get_width()
     visible, seen = _player_visibility(game)
     assets = assets or AssetCache()
     glyph_font = _glyph_font(max(8, tile_size - 4))
+    world_width = game.config.dungeon_width * tile_size
+    world_height = game.config.dungeon_height * tile_size
+    world_surface = pygame.Surface((world_width, world_height))
+    world_surface.fill((12, 12, 18))
 
     transition = game.world.overworld_transition if game.state.area == "overworld" else None
     if transition is not None:
         progress = min(1.0, max(0.0, (int(time.monotonic() * 1000) - transition.start_ms) / transition.duration_ms))
         eased = progress * progress * (3 - 2 * progress)
         direction_x, direction_y = transition.direction
-        old_offset = (-direction_x * eased * width, -direction_y * eased * game.config.dungeon_height * tile_size)
+        old_offset = (-direction_x * eased * world_width, -direction_y * eased * world_height)
         new_offset = (
-            direction_x * (1 - eased) * width,
-            direction_y * (1 - eased) * game.config.dungeon_height * tile_size,
+            direction_x * (1 - eased) * world_width,
+            direction_y * (1 - eased) * world_height,
         )
-        _draw_grid(screen, transition.from_grid, tile_size, assets, glyph_font, visible, seen, old_offset)
-        _draw_grid(screen, transition.to_grid, tile_size, assets, glyph_font, visible, seen, new_offset)
-        _draw_entities(screen, font, game, tile_size, assets, visible, new_offset)
+        _draw_grid(world_surface, transition.from_grid, tile_size, assets, glyph_font, visible, seen, old_offset)
+        _draw_grid(world_surface, transition.to_grid, tile_size, assets, glyph_font, visible, seen, new_offset)
+        _draw_entities(world_surface, font, game, tile_size, assets, visible, new_offset)
         if progress >= 1.0:
             game.world.overworld_transition = None
     else:
-        _draw_grid(screen, game.world.dungeon_grid, tile_size, assets, glyph_font, visible, seen)
-        _draw_entities(screen, font, game, tile_size, assets, visible)
+        _draw_grid(world_surface, game.world.dungeon_grid, tile_size, assets, glyph_font, visible, seen)
+        _draw_entities(world_surface, font, game, tile_size, assets, visible)
+
+    screen.blit(world_surface, (0, 0))
 
     panel_y = game.config.dungeon_height * tile_size
     _draw_hud(screen, font, game, panel_y)
@@ -155,12 +160,17 @@ def _draw_grid(
 ) -> None:
     pygame = _pygame()
     offset_x, offset_y = offset
+    rows = len(grid)
+    cols = len(grid[0]) if rows else 0
+    origin_x, origin_y = _grid_origin(screen, grid, tile_size)
     for y, row in enumerate(grid):
         for x, tile in enumerate(row):
             coordinate = (x, y)
+            left = round(origin_x + x * tile_size + offset_x)
+            top = round(origin_y + y * tile_size + offset_y)
             rect = pygame.Rect(
-                round(x * tile_size + offset_x),
-                round(y * tile_size + offset_y),
+                left,
+                top,
                 tile_size,
                 tile_size,
             )
@@ -181,23 +191,25 @@ def _draw_entities(
     visible: set[tuple[int, int]],
     offset: tuple[float, float] = (0, 0),
 ) -> None:
+    grid = game.world.dungeon_grid
+    origin = _grid_origin(screen, grid, tile_size)
     player_id = game.world.player_eid
     for entity_id in game.ecs.entities_with(["position", "descriptor", "item"]):
         entity_pos = game.ecs.get_component(entity_id, "position")
         descriptor = game.ecs.get_component(entity_id, "descriptor")
         if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
-            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset)
+            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset, origin)
 
     for entity_id in game.ecs.entities_with(["position", "descriptor", "hostile"]):
         entity_pos = game.ecs.get_component(entity_id, "position")
         descriptor = game.ecs.get_component(entity_id, "descriptor")
         if _entity_should_render(entity_pos, visible) and isinstance(descriptor, Descriptor):
-            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset)
+            _draw_entity(screen, font, tile_size, assets, entity_pos, descriptor, offset, origin)
 
     if player_id is not None:
         player_pos = game.ecs.get_component(player_id, "position")
         if isinstance(player_pos, Position):
-            _draw_entity(screen, font, tile_size, assets, player_pos, Descriptor("Hero", "@", "royalBlue"), offset)
+            _draw_entity(screen, font, tile_size, assets, player_pos, Descriptor("Hero", "@", "royalBlue"), offset, origin)
 
 
 def _draw_entity(
@@ -208,17 +220,31 @@ def _draw_entity(
     position: Position,
     descriptor: Descriptor,
     offset: tuple[float, float] = (0, 0),
+    origin: tuple[int, int] = (0, 0),
 ) -> None:
     offset_x, offset_y = offset
-    draw_x = round(position.x * tile_size + offset_x)
-    draw_y = round(position.y * tile_size + offset_y)
+    origin_x, origin_y = origin
+    draw_x = round(origin_x + position.x * tile_size + offset_x)
+    draw_y = round(origin_y + position.y * tile_size + offset_y)
+    rect_size = (tile_size, tile_size)
     image = assets.sprites.get(descriptor.sprite or "")
     if image is not None:
         screen.blit(image, (draw_x, draw_y))
         return
 
     glyph = font.render(descriptor.glyph, True, _color_for_descriptor(descriptor.color))
-    screen.blit(glyph, (draw_x + 8, draw_y + 4))
+    screen.blit(glyph, glyph.get_rect(center=(draw_x + rect_size[0] // 2, draw_y + rect_size[1] // 2)))
+
+
+def _grid_origin(screen: object, grid: list[list[Tile]], tile_size: int) -> tuple[int, int]:
+    rows = len(grid)
+    cols = len(grid[0]) if rows else 0
+    board_width = cols * tile_size
+    board_height = rows * tile_size
+    return (
+        max(0, (screen.get_width() - board_width) // 2),
+        max(0, (screen.get_height() - board_height) // 2),
+    )
 
 
 def _draw_tile_glyph(screen: object, font: object, tile: Tile, rect: object) -> None:

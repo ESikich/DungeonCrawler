@@ -46,7 +46,7 @@ def resolve_move(
     target_x = position.x + dx
     target_y = position.y + dy
 
-    if not config.in_bounds(target_x, target_y):
+    if not _grid_in_bounds(world, target_x, target_y):
         if entity_id == world.player_eid:
             add_message(world, "Can't go that way!", "blocked")
         return True
@@ -848,7 +848,7 @@ def update_vision(ecs: ECS, world: WorldState, config: GameConfig, entity_id: in
                 continue
             target_x = position.x + dx
             target_y = position.y + dy
-            if not config.in_bounds(target_x, target_y):
+            if not _grid_in_bounds(world, target_x, target_y):
                 continue
             if dx * dx + dy * dy > radius * radius:
                 continue
@@ -860,9 +860,15 @@ def update_vision(ecs: ECS, world: WorldState, config: GameConfig, entity_id: in
 def has_line_of_sight(world: WorldState, x0: int, y0: int, x1: int, y1: int) -> bool:
     line = bresenham_line(x0, y0, x1, y1)
     for x, y in line[1:-1]:
+        if not _grid_in_bounds(world, x, y):
+            return False
         if world.dungeon_grid[y][x].opaque:
             return False
     return True
+
+
+def _grid_in_bounds(world: WorldState, x: int, y: int) -> bool:
+    return 0 <= y < len(world.dungeon_grid) and 0 <= x < len(world.dungeon_grid[y])
 
 
 def bresenham_line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:

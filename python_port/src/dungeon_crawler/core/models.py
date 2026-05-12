@@ -180,6 +180,13 @@ class OverworldTransition:
 
 
 @dataclass(slots=True)
+class ForestReturnContext:
+    section: Coordinate | None = None
+    position: Position | None = None
+    tree_position: Position | None = None
+
+
+@dataclass(slots=True)
 class GameState:
     current: str = "start"
     turn_count: int = 0
@@ -213,3 +220,7 @@ class WorldState:
     dungeon_entrance_position: Position | None = None
     overworld_return_position: Position | None = None
     overworld_transition: OverworldTransition | None = None
+    forest_return_section: Coordinate | None = None
+    forest_return_position: Position | None = None
+    forest_tree_position: Position | None = None
+    forest_return_stack: list[ForestReturnContext] = field(default_factory=list)

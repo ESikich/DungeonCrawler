@@ -80,9 +80,7 @@ def generate_basic_overworld(
     _carve_overworld_trails(config, grid, section, seed)
     _cleanup_tiny_water(config, grid)
     _add_overworld_bridges(config, grid)
-    _apply_shoreline_sand(config, grid)
-    _apply_grass_tones(config, grid)
-    _apply_water_tones(config, grid)
+    apply_overworld_tile_rules(config, grid)
 
     entrance = _place_dungeon_entrance(config, grid, section, seed)
     spawn = _spawn_for_section(config, section, entrance)
@@ -91,6 +89,12 @@ def generate_basic_overworld(
     if section == (0, 0) and entrance is not None:
         _ensure_entrance_path(config, grid, entrance, spawn)
     return GeneratedOverworld(grid=grid, spawn=spawn, entrance=entrance)
+
+
+def apply_overworld_tile_rules(config: GameConfig, grid: list[list[Tile]]) -> None:
+    _apply_shoreline_sand(config, grid)
+    _apply_grass_tones(config, grid)
+    _apply_water_tones(config, grid)
 
 
 def _base_overworld_grid(config: GameConfig, section: tuple[int, int], seed: int) -> list[list[Tile]]:
@@ -648,9 +652,9 @@ def _prune_wide_bridge_components(config: GameConfig, grid: list[list[Tile]]) ->
 
 def _apply_shoreline_sand(config: GameConfig, grid: list[list[Tile]]) -> None:
     candidates: set[tuple[int, int]] = set()
-    for y in range(config.dungeon_height):
-        for x in range(config.dungeon_width):
-            if not _can_become_sand(grid[y][x]):
+    for y, row in enumerate(grid):
+        for x, tile in enumerate(row):
+            if not _can_become_sand(tile):
                 continue
             water_borders = sum(1 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)) if _is_water_like(grid, x + dx, y + dy))
             if water_borders:
@@ -672,9 +676,9 @@ def _apply_grass_tones(config: GameConfig, grid: list[list[Tile]]) -> None:
         if tile.special in {"sand", "water", "ocean"}
     ]
 
-    for y in range(config.dungeon_height):
-        for x in range(config.dungeon_width):
-            if not _is_grass_like(grid[y][x]):
+    for y, row in enumerate(grid):
+        for x, tile in enumerate(row):
+            if not _is_grass_like(tile):
                 continue
             forest_distance = _nearest_distance(x, y, forest_sources, 8)
             shore_distance = _nearest_distance(x, y, shore_sources, 8)
@@ -694,9 +698,9 @@ def _apply_water_tones(config: GameConfig, grid: list[list[Tile]]) -> None:
         if tile.special not in {"water", "ocean", "bridge"}
     ]
 
-    for y in range(config.dungeon_height):
-        for x in range(config.dungeon_width):
-            special = grid[y][x].special
+    for y, row in enumerate(grid):
+        for x, tile in enumerate(row):
+            special = tile.special
             if special not in {"water", "ocean"}:
                 continue
             shore_distance = _nearest_distance(x, y, land_sources, 6)
