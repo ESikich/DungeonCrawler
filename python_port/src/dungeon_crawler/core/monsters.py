@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from .config import GameConfig
 from .ecs import ECS
 from .entities import create_monster
-from .models import Position, WorldState
+from .models import LootDrop, Position, WorldState
 from .rng import Rng
 
 
@@ -25,6 +25,7 @@ class MonsterDefinition:
     evasion: int
     behavior: str
     xp: int
+    loot_table: tuple[LootDrop, ...] = ()
 
 
 MONSTERS: dict[str, MonsterDefinition] = {
@@ -40,6 +41,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=2,
         behavior="random",
         xp=5,
+        loot_table=(LootDrop("gold", 0.6, 2, 8), LootDrop("potion", 0.3), LootDrop("scroll", 0.1)),
     ),
     "orc": MonsterDefinition(
         name="Orc Warrior",
@@ -53,6 +55,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=4,
         behavior="chase",
         xp=12,
+        loot_table=(LootDrop("gold", 0.7, 5, 15), LootDrop("potion", 0.4), LootDrop("strength", 0.2), LootDrop("bomb", 0.3)),
     ),
     "goblin": MonsterDefinition(
         name="Goblin",
@@ -66,6 +69,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=6,
         behavior="chase",
         xp=8,
+        loot_table=(LootDrop("gold", 0.65, 3, 10), LootDrop("speed", 0.25), LootDrop("scroll", 0.2), LootDrop("vision", 0.15)),
     ),
     "rat": MonsterDefinition(
         name="Giant Rat",
@@ -79,6 +83,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=7,
         behavior="cautious",
         xp=3,
+        loot_table=(LootDrop("gold", 0.4, 1, 3),),
     ),
     "berserker": MonsterDefinition(
         name="Berserker",
@@ -92,6 +97,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=2,
         behavior="aggressive",
         xp=20,
+        loot_table=(LootDrop("gold", 0.8, 10, 25), LootDrop("strength", 0.5), LootDrop("megaHeal", 0.3)),
     ),
     "skeleton": MonsterDefinition(
         name="Skeleton Warrior",
@@ -105,6 +111,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=3,
         behavior="chase",
         xp=10,
+        loot_table=(LootDrop("gold", 0.6, 5, 15), LootDrop("potion", 0.3)),
     ),
     "spider": MonsterDefinition(
         name="Giant Spider",
@@ -118,6 +125,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=9,
         behavior="cautious",
         xp=6,
+        loot_table=(LootDrop("gold", 0.5, 1, 7),),
     ),
     "troll": MonsterDefinition(
         name="Cave Troll",
@@ -131,6 +139,7 @@ MONSTERS: dict[str, MonsterDefinition] = {
         evasion=1,
         behavior="chase",
         xp=25,
+        loot_table=(LootDrop("gold", 0.9, 12, 37), LootDrop("potion", 0.45)),
     ),
 }
 
@@ -153,6 +162,7 @@ def create_from_type(ecs: ECS, monster_type: str, x: int, y: int, *, floor_depth
         evasion=scaled.evasion,
         xp=scaled.xp,
         behavior=scaled.behavior,
+        loot_table=scaled.loot_table,
     )
 
 
@@ -215,6 +225,15 @@ def _scale_for_floor(definition: MonsterDefinition, floor_depth: int) -> Monster
         evasion=max(1, int(definition.evasion * speed_factor)),
         behavior=definition.behavior,
         xp=max(1, int(definition.xp * scaling_factor)),
+        loot_table=tuple(
+            LootDrop(
+                drop.drop_type,
+                drop.chance,
+                max(0, int(drop.min_amount * scaling_factor)),
+                max(0, int(drop.max_amount * scaling_factor)),
+            )
+            for drop in definition.loot_table
+        ),
     )
 
 

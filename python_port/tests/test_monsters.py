@@ -118,8 +118,15 @@ def test_enemy_attack_during_ai_happens_once_per_turn() -> None:
     game.spawn_monster_type("orc", player_position.x + 1, player_position.y)
     game.dispatch(Action.wait())
 
-    assert player_health.hp == 91
-    assert sum("Dealt 9 damage to Hero!" == message.text for message in game.world.messages) == 1
+    attack_messages = [
+        message.text
+        for message in game.world.messages
+        if message.text.startswith("Dealt ") and message.text.endswith(" damage to Hero!")
+    ]
+    damage = int(attack_messages[0].split()[1])
+
+    assert len(attack_messages) == 1
+    assert player_health.hp == 100 - damage
 
 
 def _enter_dungeon(game: Game) -> None:

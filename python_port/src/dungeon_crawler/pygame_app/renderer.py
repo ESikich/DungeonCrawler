@@ -27,7 +27,6 @@ class AssetCache:
             "rock": _load_image(pygame, source / "rock.png", tile_size),
             "sand": _load_image(pygame, source / "sand.png", tile_size),
             "dungeonEntrance": _load_image(pygame, source / "dungeonEntrance.png", tile_size),
-            "downStairs": _load_image(pygame, source / "dungeonEntrance.png", tile_size),
             "dungeonExit": _load_image(pygame, source / "dungeonExit.png", tile_size),
         }
         cache.sprites = {

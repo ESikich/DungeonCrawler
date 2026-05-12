@@ -1,5 +1,5 @@
 from dungeon_crawler.core.game import Action, Game
-from dungeon_crawler.core.models import Health, Inventory, Item, Position
+from dungeon_crawler.core.models import Health, Inventory, Item, LootDrop, Position
 
 
 def test_player_picks_up_healing_item_on_move() -> None:
@@ -135,4 +135,32 @@ def test_drop_item_removes_from_inventory_and_places_entity_at_player() -> None:
     assert inventory.items == []
     assert len(dropped_items) == 1
     assert game.world.messages[-1].text == "Dropped Healing Potion."
+
+
+def test_defeated_enemy_drops_loot_table_rewards() -> None:
+    game = Game()
+    game.new_game(seed=2)
+
+    player_id = game.world.player_eid
+    assert player_id is not None
+    player_position = game.ecs.get_component(player_id, "position")
+    assert isinstance(player_position, Position)
+
+    enemy_id = game.spawn_monster(
+        player_position.x + 1,
+        player_position.y,
+        hp=1,
+        loot_table=(LootDrop("gold", 1.0, 5, 5),),
+    )
+
+    consumed = game.dispatch(Action.move(1, 0))
+
+    dropped = [
+        game.ecs.get_component(entity_id, "item")
+        for entity_id in game.ecs.entities_at(player_position.x + 1, player_position.y)
+        if entity_id != enemy_id
+    ]
+    assert consumed is True
+    assert game.ecs.get_component(enemy_id, "health") is None
+    assert any(isinstance(item, Item) and item.gold_amount >= 5 for item in dropped)
 

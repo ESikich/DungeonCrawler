@@ -45,6 +45,34 @@ def test_generation_creates_multiple_rooms_and_corridors() -> None:
         assert y + height < config.dungeon_height
 
 
+def test_dungeon_generation_uses_floor_based_algorithm_variety() -> None:
+    config = GameConfig()
+    cases = {
+        "rooms": (1, 1),
+        "maze": (1, 2),
+        "caves": (4, 7),
+        "hybrid": (7, 5),
+    }
+
+    for expected_algorithm, (floor_depth, seed) in cases.items():
+        level = generate_basic_dungeon(config, Rng(seed=seed), floor_depth=floor_depth)
+        walkable_count = sum(tile.walkable for row in level.grid for tile in row)
+
+        assert level.algorithm == expected_algorithm
+        assert len(level.rooms) >= 2
+        assert count_reachable_walkable_tiles(level.grid, level.spawn) == walkable_count
+
+
+def test_deep_hybrid_generation_adds_special_room_features() -> None:
+    config = GameConfig()
+    level = generate_basic_dungeon(config, Rng(seed=6), floor_depth=7)
+    specials = {tile.special for row in level.grid for tile in row}
+
+    assert level.algorithm == "hybrid"
+    assert "specialFloor" in specials
+    assert "lava" in specials
+
+
 def test_basic_overworld_generation_creates_origin_entrance_and_is_deterministic() -> None:
     config = GameConfig()
     overworld_a = generate_basic_overworld(config, section=(0, 0), seed=1234)

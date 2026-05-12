@@ -60,11 +60,34 @@ class Item:
     name: str
     glyph: str
     color: str = "white"
+    rarity: str = "common"
+    description: str = ""
+    effect: str = "none"
     heal_amount: int = 0
     gold_amount: int = 0
     stat_boost: str | None = None
     boost_amount: int = 0
     boost_turns: int = 0
+    accuracy_bonus: int = 0
+    evasion_bonus: int = 0
+    agility_bonus: int = 0
+    reduction: float = 0.35
+    regen_amount: int = 0
+    temp_max_hp_amount: int = 0
+    evasion_penalty: int = 0
+    radius: int = 0
+    damage: int = 0
+    permanent_boost: str | None = None
+    permanent_amount: float = 0
+    utility_type: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class LootDrop:
+    drop_type: str
+    chance: float
+    min_amount: int = 0
+    max_amount: int = 0
 
 
 @dataclass(slots=True)
@@ -72,6 +95,7 @@ class AI:
     behavior: str = "chase"
     active: bool = False
     last_player_pos: Coordinate | None = None
+    silenced: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -112,6 +136,10 @@ class Status:
     clarity_accuracy_amount: int = 0
     clarity_evasion_amount: int = 0
     damage_reduction_percent: float = 0.35
+    regen_amount: int = 0
+    temp_max_hp_amount: int = 0
+    glass_fury_strength_amount: int = 0
+    glass_fury_evasion_penalty: int = 0
 
 
 @dataclass(slots=True)
@@ -134,6 +162,15 @@ class DungeonLevelSnapshot:
 
 
 @dataclass(slots=True)
+class DungeonInstance:
+    dungeon_id: str
+    section: Coordinate
+    entrance: Position
+    max_depth: int = 1
+    levels: dict[int, DungeonLevelSnapshot] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class GameState:
     current: str = "start"
     turn_count: int = 0
@@ -143,6 +180,8 @@ class GameState:
     dungeon_max_depth: int = 1
     floors_descended: int = 0
     player_gold: int = 0
+    gold_multiplier: float = 1.0
+    xp_multiplier: float = 1.0
     player_attacked_this_turn: bool = False
     enemy_attacked_this_turn: bool = False
     status_applied_this_turn: bool = False
@@ -152,6 +191,8 @@ class GameState:
 class WorldState:
     dungeon_grid: list[list[Tile]] = field(default_factory=list)
     dungeon_levels: dict[int, DungeonLevelSnapshot] = field(default_factory=dict)
+    dungeons: dict[str, DungeonInstance] = field(default_factory=dict)
+    active_dungeon_id: str | None = None
     overworld_sections: dict[Coordinate, list[list[Tile]]] = field(default_factory=dict)
     overworld_section: Coordinate = (0, 0)
     overworld_seed: int = 0

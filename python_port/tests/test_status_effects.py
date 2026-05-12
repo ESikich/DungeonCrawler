@@ -1,5 +1,6 @@
 from dungeon_crawler.core.game import Action, Game
-from dungeon_crawler.core.models import Inventory, Item, Stats, Status
+from dungeon_crawler.core.items import item_for_type
+from dungeon_crawler.core.models import Health, Inventory, Item, Stats, Status, Vision
 
 
 def strength_elixir() -> Item:
@@ -97,4 +98,58 @@ def test_strength_boost_cannot_stack() -> None:
     assert len(inventory.items) == 1
     assert game.state.turn_count == turn_after_first_use
     assert game.world.messages[-1].text == "You are already empowered."
+
+
+def test_light_scroll_expands_vision_then_restores_base_radius() -> None:
+    game = Game()
+    game.new_game(seed=2)
+
+    player_id = game.world.player_eid
+    assert player_id is not None
+    inventory = game.ecs.get_component(player_id, "inventory")
+    vision = game.ecs.get_component(player_id, "vision")
+    status = game.ecs.get_component(player_id, "status")
+    assert isinstance(inventory, Inventory)
+    assert isinstance(vision, Vision)
+    assert isinstance(status, Status)
+
+    inventory.items.append(item_for_type("scroll"))
+    base_radius = vision.base_radius
+
+    assert game.dispatch(Action.use_item(0)) is True
+    assert vision.radius == base_radius + 3
+    assert status.light_boost == 20
+
+    for _ in range(20):
+        game.dispatch(Action.wait())
+
+    assert vision.radius == base_radius
+    assert status.light_boost == 0
+    assert game.world.messages[-1].text == "The bright light fades."
+
+
+def test_regen_potion_heals_over_time_and_expires() -> None:
+    game = Game()
+    game.new_game(seed=2)
+
+    player_id = game.world.player_eid
+    assert player_id is not None
+    inventory = game.ecs.get_component(player_id, "inventory")
+    health = game.ecs.get_component(player_id, "health")
+    status = game.ecs.get_component(player_id, "status")
+    assert isinstance(inventory, Inventory)
+    assert isinstance(health, Health)
+    assert isinstance(status, Status)
+
+    health.hp = 50
+    inventory.items.append(item_for_type("mending"))
+
+    assert game.dispatch(Action.use_item(0)) is True
+    assert status.regen_boost == 8
+    assert health.hp == 50
+
+    game.dispatch(Action.wait())
+
+    assert health.hp == 53
+    assert status.regen_boost == 7
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 from .config import GameConfig
@@ -18,6 +18,7 @@ class GeneratedLevel:
     spawn: Position
     stairs: Position
     rooms: list[tuple[int, int, int, int]]
+    algorithm: str = "rooms"
 
 
 @dataclass(slots=True, frozen=True)
@@ -27,22 +28,40 @@ class GeneratedOverworld:
     entrance: Position | None
 
 
-def generate_basic_dungeon(config: GameConfig, rng: Rng) -> GeneratedLevel:
-    """Generate a connected room-and-corridor dungeon."""
+@dataclass(slots=True)
+class _DungeonRoom:
+    x: int
+    y: int
+    width: int
+    height: int
+    room_type: str = "normal"
+    features: list[dict[str, int | str]] = field(default_factory=list)
 
+    def tuple(self) -> tuple[int, int, int, int]:
+        return (self.x, self.y, self.width, self.height)
+
+    def center(self) -> Position:
+        return Position(self.x + self.width // 2, self.y + self.height // 2)
+
+
+def generate_basic_dungeon(config: GameConfig, rng: Rng, *, floor_depth: int = 1) -> GeneratedLevel:
+    """Generate a connected dungeon with JS-style floor-based variety."""
+
+    algorithm = _choose_dungeon_algorithm(rng, floor_depth)
     grid = [[tiles.wall() for _ in range(config.dungeon_width)] for _ in range(config.dungeon_height)]
-    rooms = _place_rooms(config, rng)
+    room_objects = _generate_dungeon_layout(config, rng, grid, algorithm, floor_depth)
+    if not room_objects:
+        room_objects = _create_fallback_rooms(config, grid)
 
-    for room in rooms:
-        _carve_room(grid, room)
+    _validate_dungeon_connectivity(config, grid, room_objects, rng)
+    _add_environmental_hazards(config, rng, grid, floor_depth)
 
-    for previous, current in zip(rooms, rooms[1:]):
-        _connect_rooms(grid, _room_center(previous), _room_center(current), rng)
-
-    spawn = _room_center(rooms[0])
-    stairs_position = _room_center(rooms[-1])
+    spawn = room_objects[0].center()
+    stairs_position = _farthest_walkable_position(config, grid, spawn) or room_objects[-1].center()
+    grid[spawn.y][spawn.x] = tiles.floor()
     grid[stairs_position.y][stairs_position.x] = tiles.stairs()
-    return GeneratedLevel(grid=grid, spawn=spawn, stairs=stairs_position, rooms=rooms)
+    rooms = [room.tuple() for room in room_objects]
+    return GeneratedLevel(grid=grid, spawn=spawn, stairs=stairs_position, rooms=rooms, algorithm=algorithm)
 
 
 def generate_basic_overworld(
@@ -1055,39 +1074,150 @@ def _sign(value: int) -> int:
     return 0
 
 
-def _place_rooms(config: GameConfig, rng: Rng) -> list[tuple[int, int, int, int]]:
-    max_rooms = 6
-    attempts = 80
-    rooms: list[tuple[int, int, int, int]] = []
+def _choose_dungeon_algorithm(rng: Rng, floor_depth: int) -> str:
+    depth = max(1, abs(floor_depth))
+    if depth <= 3:
+        return "rooms" if rng.chance(0.8) else "maze"
+    if depth <= 6:
+        return rng.choice(("rooms", "caves", "maze"))
+    if depth <= 10:
+        return rng.choice(("caves", "maze", "hybrid"))
+    return "hybrid" if rng.chance(0.6) else "caves"
 
-    for _ in range(attempts):
-        width = rng.randint(4, min(8, config.dungeon_width - 4))
-        height = rng.randint(3, min(6, config.dungeon_height - 4))
-        x = rng.randint(1, config.dungeon_width - width - 1)
-        y = rng.randint(1, config.dungeon_height - height - 1)
-        room = (x, y, width, height)
 
-        if any(_rooms_intersect(room, existing, buffer=1) for existing in rooms):
-            continue
+def _generate_dungeon_layout(
+    config: GameConfig,
+    rng: Rng,
+    grid: list[list[Tile]],
+    algorithm: str,
+    floor_depth: int,
+) -> list[_DungeonRoom]:
+    if algorithm == "caves":
+        _generate_cellular_caves(config, rng, grid)
+        rooms = _identify_cave_rooms(config, grid)
+        _connect_all_rooms(config, rng, grid, rooms)
+        return rooms
 
-        rooms.append(room)
-        if len(rooms) >= max_rooms:
-            break
+    if algorithm == "maze":
+        rooms = _generate_maze_rooms(config, rng, grid)
+        _generate_maze_corridors(config, rng, grid)
+        _connect_rooms_to_maze(config, rng, grid, rooms)
+        return rooms
 
-    if len(rooms) < 2:
-        return _fallback_rooms(config)
+    if algorithm == "hybrid":
+        rooms = _generate_rooms_with_variety(config, rng, grid, target_scale=0.6)
+        _generate_cellular_caves(config, rng, grid)
+        rooms.extend(_identify_cave_rooms(config, grid)[:3])
+        if rng.chance(0.5):
+            _generate_maze_corridors(config, rng, grid)
+        _connect_all_rooms(config, rng, grid, rooms)
+        _add_special_features(config, rng, grid, rooms, floor_depth)
+        return rooms
 
+    rooms = _generate_rooms_with_variety(config, rng, grid)
+    _connect_all_rooms(config, rng, grid, rooms)
     return rooms
 
 
-def _fallback_rooms(config: GameConfig) -> list[tuple[int, int, int, int]]:
+def _generate_rooms_with_variety(
+    config: GameConfig,
+    rng: Rng,
+    grid: list[list[Tile]],
+    *,
+    target_scale: float = 1.0,
+) -> list[_DungeonRoom]:
+    max_rooms = max(2, int(rng.randint(6, 12) * target_scale))
+    rooms: list[_DungeonRoom] = []
+
+    for _ in range(150):
+        if len(rooms) >= max_rooms:
+            break
+        room = _generate_special_room(config, rng) if len(rooms) > 2 and rng.chance(0.2) else _generate_normal_room(config, rng)
+        if room is None or any(_rooms_intersect(room.tuple(), existing.tuple(), buffer=1) for existing in rooms):
+            continue
+        rooms.append(room)
+        _carve_room(grid, room)
+
+    if len(rooms) < 2:
+        return _create_fallback_rooms(config, grid)
+    return rooms
+
+
+def _generate_normal_room(config: GameConfig, rng: Rng) -> _DungeonRoom | None:
+    max_width = min(12, config.dungeon_width - 4)
+    max_height = min(12, config.dungeon_height - 4)
+    if max_width < 4 or max_height < 4:
+        return None
+    width = rng.randint(4, max_width)
+    height = rng.randint(4, max_height)
+    x = rng.randint(1, config.dungeon_width - width - 2)
+    y = rng.randint(1, config.dungeon_height - height - 2)
+    room_type = "special" if rng.chance(0.1) else "normal"
+    return _DungeonRoom(x, y, width, height, room_type)
+
+
+def _generate_special_room(config: GameConfig, rng: Rng) -> _DungeonRoom | None:
+    shape = rng.choice(("L", "T", "plus", "circle"))
+    if shape == "L":
+        base_width = rng.randint(6, min(10, config.dungeon_width - 8))
+        base_height = rng.randint(6, min(10, config.dungeon_height - 7))
+        x = rng.randint(2, config.dungeon_width - base_width - 3)
+        y = rng.randint(2, config.dungeon_height - base_height - 3)
+        return _DungeonRoom(
+            x,
+            y,
+            base_width,
+            base_height,
+            "L-shaped",
+            [{"type": "arm", "x": x + base_width - 3, "y": y, "w": 3, "h": 3}],
+        )
+    if shape == "T":
+        base_width = rng.randint(8, min(12, config.dungeon_width - 5))
+        base_height = rng.randint(4, min(6, config.dungeon_height - 8))
+        stem_height = rng.randint(3, min(5, config.dungeon_height - base_height - 4))
+        stem_width = rng.randint(3, min(5, base_width))
+        x = rng.randint(2, config.dungeon_width - base_width - 3)
+        y = rng.randint(2, config.dungeon_height - base_height - stem_height - 3)
+        stem_x = x + (base_width - stem_width) // 2
+        return _DungeonRoom(x, y, base_width, base_height, "T-shaped", [{"type": "stem", "x": stem_x, "y": y + base_height, "w": stem_width, "h": stem_height}])
+    if shape == "plus":
+        center_width = rng.randint(4, min(6, config.dungeon_width - 10))
+        center_height = rng.randint(4, min(6, config.dungeon_height - 10))
+        arm = rng.randint(2, 3)
+        x = rng.randint(arm + 1, config.dungeon_width - center_width - arm - 2)
+        y = rng.randint(arm + 1, config.dungeon_height - center_height - arm - 2)
+        return _DungeonRoom(
+            x,
+            y,
+            center_width,
+            center_height,
+            "plus",
+            [
+                {"type": "arm", "x": x - arm, "y": y + 1, "w": arm, "h": center_height - 2},
+                {"type": "arm", "x": x + center_width, "y": y + 1, "w": arm, "h": center_height - 2},
+                {"type": "arm", "x": x + 1, "y": y - arm, "w": center_width - 2, "h": arm},
+                {"type": "arm", "x": x + 1, "y": y + center_height, "w": center_width - 2, "h": arm},
+            ],
+        )
+    radius = rng.randint(3, min(5, (config.dungeon_width - 4) // 2, (config.dungeon_height - 4) // 2))
+    center_x = rng.randint(radius + 1, config.dungeon_width - radius - 2)
+    center_y = rng.randint(radius + 1, config.dungeon_height - radius - 2)
+    diameter = radius * 2 + 1
+    return _DungeonRoom(center_x - radius, center_y - radius, diameter, diameter, "circular", [{"type": "circle", "centerX": center_x, "centerY": center_y, "radius": radius}])
+
+
+def _create_fallback_rooms(config: GameConfig, grid: list[list[Tile]]) -> list[_DungeonRoom]:
     top_height = max(3, config.dungeon_height // 3)
     bottom_height = max(3, config.dungeon_height // 3)
     room_width = max(5, config.dungeon_width // 3)
-    return [
-        (2, 2, room_width, top_height),
-        (config.dungeon_width - room_width - 2, config.dungeon_height - bottom_height - 2, room_width, bottom_height),
+    rooms = [
+        _DungeonRoom(2, 2, room_width, top_height, "fallback"),
+        _DungeonRoom(config.dungeon_width - room_width - 2, config.dungeon_height - bottom_height - 2, room_width, bottom_height, "fallback"),
     ]
+    for room in rooms:
+        _carve_room(grid, room)
+    _connect_all_rooms(config, Rng(0), grid, rooms)
+    return rooms
 
 
 def _rooms_intersect(
@@ -1106,15 +1236,45 @@ def _rooms_intersect(
     )
 
 
-def _carve_room(grid: list[list[Tile]], room: tuple[int, int, int, int]) -> None:
-    x, y, width, height = room
-    for tile_y in range(y, y + height):
-        for tile_x in range(x, x + width):
-            grid[tile_y][tile_x] = tiles.floor()
+def _carve_room(grid: list[list[Tile]], room: _DungeonRoom) -> None:
+    for tile_y in range(room.y, room.y + room.height):
+        for tile_x in range(room.x, room.x + room.width):
+            if _grid_in_bounds(grid, tile_x, tile_y):
+                grid[tile_y][tile_x] = tiles.special_floor((70, 70, 100)) if room.room_type == "special" else tiles.floor()
+    for feature in room.features:
+        _carve_room_feature(grid, feature)
+    _add_room_decorations(grid, room)
+
+
+def _carve_room_feature(grid: list[list[Tile]], feature: dict[str, int | str]) -> None:
+    feature_type = feature["type"]
+    if feature_type in {"arm", "stem"}:
+        for y in range(int(feature["y"]), int(feature["y"]) + int(feature["h"])):
+            for x in range(int(feature["x"]), int(feature["x"]) + int(feature["w"])):
+                if _grid_in_bounds(grid, x, y):
+                    grid[y][x] = tiles.floor()
+    elif feature_type == "circle":
+        center_x = int(feature["centerX"])
+        center_y = int(feature["centerY"])
+        radius = int(feature["radius"])
+        for y in range(center_y - radius, center_y + radius + 1):
+            for x in range(center_x - radius, center_x + radius + 1):
+                if _grid_in_bounds(grid, x, y) and (x - center_x) ** 2 + (y - center_y) ** 2 <= radius * radius:
+                    grid[y][x] = tiles.floor()
+
+
+def _add_room_decorations(grid: list[list[Tile]], room: _DungeonRoom) -> None:
+    center = room.center()
+    if room.room_type == "circular" and _grid_in_bounds(grid, center.x, center.y):
+        grid[center.y][center.x] = tiles.shallow_water()
 
 
 def _connect_rooms(grid: list[list[Tile]], start: Position, end: Position, rng: Rng) -> None:
-    if rng.chance(0.5):
+    if rng.chance(0.3):
+        for x, y in _bresenham_line(start.x, start.y, end.x, end.y):
+            if _grid_in_bounds(grid, x, y):
+                grid[y][x] = tiles.floor()
+    elif rng.chance(0.5):
         _carve_horizontal_corridor(grid, start.x, end.x, start.y)
         _carve_vertical_corridor(grid, start.y, end.y, end.x)
     else:
@@ -1135,6 +1295,293 @@ def _carve_vertical_corridor(grid: list[list[Tile]], y1: int, y2: int, x: int) -
 def _room_center(room: tuple[int, int, int, int]) -> Position:
     x, y, width, height = room
     return Position(x=x + width // 2, y=y + height // 2)
+
+
+def _connect_all_rooms(config: GameConfig, rng: Rng, grid: list[list[Tile]], rooms: list[_DungeonRoom]) -> None:
+    if len(rooms) < 2:
+        return
+    connected = {0}
+    while len(connected) < len(rooms):
+        best: tuple[int, int] | None = None
+        best_distance = 10**9
+        for connected_index in connected:
+            for index, room in enumerate(rooms):
+                if index in connected:
+                    continue
+                distance = _room_distance(rooms[connected_index], room)
+                if distance < best_distance:
+                    best = (connected_index, index)
+                    best_distance = distance
+        if best is None:
+            break
+        _connect_rooms(grid, rooms[best[0]].center(), rooms[best[1]].center(), rng)
+        connected.add(best[1])
+    for _ in range(len(rooms) // 3):
+        first = rng.choice(rooms)
+        second = rng.choice(rooms)
+        if first is not second and rng.chance(0.5):
+            _connect_rooms(grid, first.center(), second.center(), rng)
+
+
+def _room_distance(first: _DungeonRoom, second: _DungeonRoom) -> int:
+    first_center = first.center()
+    second_center = second.center()
+    return abs(first_center.x - second_center.x) + abs(first_center.y - second_center.y)
+
+
+def _generate_cellular_caves(config: GameConfig, rng: Rng, grid: list[list[Tile]]) -> None:
+    for y in range(1, config.dungeon_height - 1):
+        for x in range(1, config.dungeon_width - 1):
+            if rng.chance(0.45):
+                grid[y][x] = tiles.floor()
+    for _ in range(5):
+        next_grid = [[tiles.wall() for _ in range(config.dungeon_width)] for _ in range(config.dungeon_height)]
+        for y in range(config.dungeon_height):
+            for x in range(config.dungeon_width):
+                wall_count = _neighboring_wall_count(config, grid, x, y)
+                if x == 0 or y == 0 or x == config.dungeon_width - 1 or y == config.dungeon_height - 1:
+                    next_grid[y][x] = tiles.wall()
+                elif wall_count >= 5:
+                    next_grid[y][x] = tiles.wall()
+                elif wall_count <= 3:
+                    next_grid[y][x] = tiles.floor()
+                else:
+                    next_grid[y][x] = grid[y][x]
+        for y in range(config.dungeon_height):
+            grid[y][:] = next_grid[y]
+
+
+def _neighboring_wall_count(config: GameConfig, grid: list[list[Tile]], x: int, y: int) -> int:
+    count = 0
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            nx = x + dx
+            ny = y + dy
+            if not config.in_bounds(nx, ny) or not grid[ny][nx].walkable:
+                count += 1
+    return count
+
+
+def _identify_cave_rooms(config: GameConfig, grid: list[list[Tile]]) -> list[_DungeonRoom]:
+    visited: set[tuple[int, int]] = set()
+    rooms: list[_DungeonRoom] = []
+    for y in range(1, config.dungeon_height - 1):
+        for x in range(1, config.dungeon_width - 1):
+            if (x, y) in visited or not grid[y][x].walkable:
+                continue
+            cells = _walkable_component(config, grid, Position(x, y), visited)
+            if len(cells) < 16:
+                continue
+            xs = [cell[0] for cell in cells]
+            ys = [cell[1] for cell in cells]
+            rooms.append(_DungeonRoom(min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1, "cave"))
+    return rooms
+
+
+def _walkable_component(config: GameConfig, grid: list[list[Tile]], start: Position, visited: set[tuple[int, int]]) -> list[tuple[int, int]]:
+    stack = [(start.x, start.y)]
+    cells: list[tuple[int, int]] = []
+    while stack:
+        x, y = stack.pop()
+        if (x, y) in visited or not config.in_bounds(x, y) or not grid[y][x].walkable:
+            continue
+        visited.add((x, y))
+        cells.append((x, y))
+        stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
+    return cells
+
+
+def _generate_maze_rooms(config: GameConfig, rng: Rng, grid: list[list[Tile]]) -> list[_DungeonRoom]:
+    rooms: list[_DungeonRoom] = []
+    for _ in range(rng.randint(4, 8)):
+        for _attempt in range(50):
+            width = rng.randint(4, min(8, config.dungeon_width - 5))
+            height = rng.randint(4, min(8, config.dungeon_height - 5))
+            x = rng.randint(2, config.dungeon_width - width - 3)
+            y = rng.randint(2, config.dungeon_height - height - 3)
+            room = _DungeonRoom(x, y, width, height, "maze-room")
+            if any(_rooms_intersect(room.tuple(), existing.tuple(), buffer=4) for existing in rooms):
+                continue
+            rooms.append(room)
+            _carve_room(grid, room)
+            break
+    return rooms or _create_fallback_rooms(config, grid)
+
+
+def _generate_maze_corridors(config: GameConfig, rng: Rng, grid: list[list[Tile]]) -> None:
+    for y in range(3, config.dungeon_height - 3, 4):
+        for x in range(1, config.dungeon_width - 1):
+            if rng.chance(0.7):
+                grid[y][x] = tiles.floor()
+    for x in range(3, config.dungeon_width - 3, 4):
+        for y in range(1, config.dungeon_height - 1):
+            if rng.chance(0.7):
+                grid[y][x] = tiles.floor()
+
+
+def _connect_rooms_to_maze(config: GameConfig, rng: Rng, grid: list[list[Tile]], rooms: list[_DungeonRoom]) -> None:
+    for room in rooms:
+        center = room.center()
+        nearest: Position | None = None
+        best_distance = 10**9
+        for y in range(1, config.dungeon_height - 1):
+            for x in range(1, config.dungeon_width - 1):
+                if not grid[y][x].walkable or _position_in_any_room(x, y, rooms):
+                    continue
+                distance = abs(center.x - x) + abs(center.y - y)
+                if distance < best_distance:
+                    nearest = Position(x, y)
+                    best_distance = distance
+        if nearest is not None:
+            _connect_rooms(grid, center, nearest, rng)
+
+
+def _position_in_any_room(x: int, y: int, rooms: list[_DungeonRoom]) -> bool:
+    return any(room.x <= x < room.x + room.width and room.y <= y < room.y + room.height for room in rooms)
+
+
+def _validate_dungeon_connectivity(config: GameConfig, grid: list[list[Tile]], rooms: list[_DungeonRoom], rng: Rng) -> None:
+    start = rooms[0].center()
+    if not config.in_bounds(start.x, start.y):
+        return
+    if not grid[start.y][start.x].walkable:
+        grid[start.y][start.x] = tiles.floor()
+    reachable = _reachable_coordinates(config, grid, start)
+    for y in range(1, config.dungeon_height - 1):
+        for x in range(1, config.dungeon_width - 1):
+            if grid[y][x].walkable and (x, y) not in reachable:
+                nearest = _nearest_reachable(x, y, reachable)
+                if nearest is not None:
+                    _connect_rooms(grid, Position(x, y), Position(nearest[0], nearest[1]), rng)
+                    reachable = _reachable_coordinates(config, grid, start)
+
+
+def _reachable_coordinates(config: GameConfig, grid: list[list[Tile]], start: Position) -> set[tuple[int, int]]:
+    queue: deque[tuple[int, int]] = deque([(start.x, start.y)])
+    seen = {(start.x, start.y)}
+    while queue:
+        x, y = queue.popleft()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if not config.in_bounds(nx, ny) or (nx, ny) in seen or not grid[ny][nx].walkable:
+                continue
+            seen.add((nx, ny))
+            queue.append((nx, ny))
+    return seen
+
+
+def _nearest_reachable(x: int, y: int, reachable: set[tuple[int, int]]) -> tuple[int, int] | None:
+    best: tuple[int, int] | None = None
+    best_distance = 10**9
+    for rx, ry in reachable:
+        distance = abs(x - rx) + abs(y - ry)
+        if distance < best_distance:
+            best = (rx, ry)
+            best_distance = distance
+    return best
+
+
+def _farthest_walkable_position(config: GameConfig, grid: list[list[Tile]], start: Position) -> Position | None:
+    queue: deque[tuple[int, int]] = deque([(start.x, start.y)])
+    distances = {(start.x, start.y): 0}
+    best = start
+    while queue:
+        x, y = queue.popleft()
+        if distances[(x, y)] > distances[(best.x, best.y)]:
+            best = Position(x, y)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if not config.in_bounds(nx, ny) or (nx, ny) in distances or not grid[ny][nx].walkable:
+                continue
+            distances[(nx, ny)] = distances[(x, y)] + 1
+            queue.append((nx, ny))
+    return best if best != start else None
+
+
+def _add_environmental_hazards(config: GameConfig, rng: Rng, grid: list[list[Tile]], floor_depth: int) -> None:
+    if floor_depth >= 5 and rng.chance(0.3):
+        _replace_random_walkable_tiles(config, rng, grid, tiles.shallow_water, rng.randint(1, 3))
+    if floor_depth >= 8 and rng.chance(0.2):
+        _replace_random_walkable_tiles(config, rng, grid, tiles.lava, rng.randint(1, 2))
+
+
+def _replace_random_walkable_tiles(config: GameConfig, rng: Rng, grid: list[list[Tile]], tile_factory: object, count: int) -> None:
+    candidates = [
+        (x, y)
+        for y in range(2, config.dungeon_height - 2)
+        for x in range(2, config.dungeon_width - 2)
+        if grid[y][x].walkable and grid[y][x].special not in {"downStairs", "dungeonExit"}
+    ]
+    for _ in range(min(count, len(candidates))):
+        x, y = rng.choice(candidates)
+        candidates.remove((x, y))
+        grid[y][x] = tile_factory()
+
+
+def _add_special_features(config: GameConfig, rng: Rng, grid: list[list[Tile]], rooms: list[_DungeonRoom], floor_depth: int) -> None:
+    for room in rooms:
+        if not rng.chance(0.15):
+            continue
+        special_types = ["treasure", "danger", "shrine"]
+        if floor_depth >= 5:
+            special_types.append("lava_chamber")
+        if floor_depth >= 8:
+            special_types.append("ice_chamber")
+        special_type = rng.choice(tuple(special_types))
+        _apply_special_room_features(config, rng, grid, room, special_type)
+
+
+def _apply_special_room_features(config: GameConfig, rng: Rng, grid: list[list[Tile]], room: _DungeonRoom, special_type: str) -> None:
+    colors = {
+        "treasure": (150, 150, 50),
+        "danger": (100, 50, 50),
+        "shrine": (100, 50, 150),
+        "lava_chamber": (120, 60, 30),
+        "ice_chamber": (50, 100, 150),
+    }
+    color = colors.get(special_type, (70, 70, 100))
+    for y in range(room.y, room.y + room.height):
+        for x in range(room.x, room.x + room.width):
+            if config.in_bounds(x, y):
+                grid[y][x] = tiles.special_floor(color)
+    center = room.center()
+    if not config.in_bounds(center.x, center.y):
+        return
+    if special_type in {"danger", "shrine"}:
+        grid[center.y][center.x] = tiles.pillar()
+    elif special_type == "lava_chamber":
+        grid[center.y][center.x] = tiles.lava()
+    elif special_type == "ice_chamber":
+        for _ in range(rng.randint(1, 3)):
+            x = rng.randint(room.x + 1, max(room.x + 1, room.x + room.width - 2))
+            y = rng.randint(room.y + 1, max(room.y + 1, room.y + room.height - 2))
+            if config.in_bounds(x, y):
+                grid[y][x] = tiles.shallow_water()
+
+
+def _grid_in_bounds(grid: list[list[Tile]], x: int, y: int) -> bool:
+    return 0 <= y < len(grid) and 0 <= x < len(grid[y])
+
+
+def _bresenham_line(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
+    points: list[tuple[int, int]] = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+    x, y = x0, y0
+
+    while True:
+        points.append((x, y))
+        if x == x1 and y == y1:
+            break
+        err2 = 2 * err
+        if err2 > -dy:
+            err -= dy
+            x += sx
+        if err2 < dx:
+            err += dx
+            y += sy
+    return points
 
 
 def count_reachable_walkable_tiles(grid: list[list[Tile]], start: Position) -> int:

@@ -106,6 +106,33 @@ def test_dungeon_max_depth_blocks_descending() -> None:
     assert game.world.messages[-1].text == "This dungeon goes no deeper."
 
 
+def test_distinct_overworld_entrances_keep_separate_dungeon_caches() -> None:
+    game = Game()
+    game.new_game(seed=37)
+    _enter_dungeon_with_depth(game, 2)
+    first_dungeon_id = game.world.active_dungeon_id
+    assert first_dungeon_id is not None
+
+    game.world.dungeon_grid[0][0] = tiles.sand()
+    assert game.exit_dungeon() is True
+
+    player_id = game.world.player_eid
+    assert player_id is not None
+    player_position = game.ecs.get_component(player_id, "position")
+    assert isinstance(player_position, Position)
+    player_position.x = 1
+    player_position.y = 1
+    game.world.dungeon_grid[1][1] = tiles.dungeon_entrance()
+
+    assert game.enter_dungeon() is True
+    second_dungeon_id = game.world.active_dungeon_id
+
+    assert second_dungeon_id is not None
+    assert second_dungeon_id != first_dungeon_id
+    assert game.world.dungeons[first_dungeon_id].levels[-1].dungeon_grid[0][0].special == "sand"
+    assert game.world.dungeon_grid[0][0].special != "sand"
+
+
 def _enter_dungeon_with_depth(game: Game, depth: int) -> None:
     player_id = game.world.player_eid
     assert player_id is not None

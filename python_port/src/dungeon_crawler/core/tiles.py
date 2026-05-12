@@ -11,6 +11,22 @@ def floor() -> Tile:
     return Tile(walkable=True, opaque=False, color=(50, 50, 50), glyph=".")
 
 
+def special_floor(color: tuple[int, int, int]) -> Tile:
+    return Tile(walkable=True, opaque=False, color=color, glyph=".", special="specialFloor")
+
+
+def pillar() -> Tile:
+    return Tile(walkable=False, opaque=True, color=(120, 120, 120), glyph="O", special="pillar")
+
+
+def door() -> Tile:
+    return Tile(walkable=True, opaque=False, color=(139, 69, 19), glyph="+", special="door")
+
+
+def lava() -> Tile:
+    return Tile(walkable=False, opaque=False, color=(255, 80, 0), glyph="~", special="lava")
+
+
 def stairs() -> Tile:
     return Tile(walkable=True, opaque=False, color=(50, 50, 50), glyph=">", special="downStairs")
 

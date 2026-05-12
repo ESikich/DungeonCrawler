@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .ecs import ECS
-from .models import AI, Blocker, Descriptor, Health, Inventory, Position, Progress, Stats, Status, Vision
+from .models import AI, Blocker, Descriptor, Health, Inventory, LootDrop, Position, Progress, Stats, Status, Vision
 
 
 def create_player(ecs: ECS, x: int, y: int) -> int:
@@ -37,6 +37,7 @@ def create_monster(
     behavior: str = "random",
     vision_radius: int = 6,
     sprite: str | None = None,
+    loot_table: tuple[LootDrop, ...] = (),
 ) -> int:
     entity_id = ecs.create_entity()
     ecs.add_component(entity_id, "position", Position(x=x, y=y))
@@ -52,4 +53,6 @@ def create_monster(
     ecs.add_component(entity_id, "blocker", Blocker(passable=False))
     ecs.add_component(entity_id, "hostile", True)
     ecs.add_component(entity_id, "xp_value", xp)
+    if loot_table:
+        ecs.add_component(entity_id, "loot_table", list(loot_table))
     return entity_id

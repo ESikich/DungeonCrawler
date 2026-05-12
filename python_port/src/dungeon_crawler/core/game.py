@@ -12,7 +12,7 @@ from .entities import create_monster, create_player
 from .generation import generate_basic_dungeon, generate_basic_overworld
 from .items import create_gold_entity, create_item_entity
 from .monsters import create_from_type, spawn_away_from_player
-from .models import DungeonLevelSnapshot, EntitySnapshot, GameState, Position, WorldState
+from .models import DungeonInstance, DungeonLevelSnapshot, EntitySnapshot, GameState, Position, WorldState
 from .rng import Rng
 from .systems import (
     add_message,
@@ -121,7 +121,7 @@ class Game:
             add_message(self.world, "You wait.", "action")
             consumed_turn = True
         elif action.kind == "use_item":
-            consumed_turn = use_inventory_item(self.ecs, self.world, self.state, action.index)
+            consumed_turn = use_inventory_item(self.ecs, self.world, self.state, action.index, self.rng)
         elif action.kind == "drop_item":
             consumed_turn = drop_inventory_item(self.ecs, self.world, action.index)
 
@@ -208,10 +208,10 @@ class Game:
         self._save_current_overworld_section()
         self.world.overworld_return_position = Position(player_position.x, player_position.y)
         self.world.dungeon_entrance_position = Position(player_position.x, player_position.y)
+        dungeon = self._activate_dungeon_for_current_entrance(player_position)
         self.state.area = "dungeon"
         self.state.floor = -1
-        if not self.world.dungeon_levels:
-            self.state.dungeon_max_depth = self._player_level()
+        self.state.dungeon_max_depth = dungeon.max_depth
         self._clear_non_player_entities()
 
         if not self._restore_floor(-1, arrival="up_stairs"):
@@ -228,6 +228,7 @@ class Game:
 
         self._save_current_floor()
         self._clear_non_player_entities()
+        self.world.active_dungeon_id = None
         self.state.area = "overworld"
         self.state.floor = 0
         self.world.stairs_position = None
@@ -315,7 +316,7 @@ class Game:
         self._generate_floor(arrival=arrival, keep_position=keep_position)
 
     def _generate_floor(self, *, arrival: str, keep_position: bool) -> None:
-        level = generate_basic_dungeon(self.config, self.rng)
+        level = generate_basic_dungeon(self.config, self.rng, floor_depth=abs(self.state.floor))
         self.world.dungeon_grid = level.grid
         self.world.spawn_position = level.spawn
         self.world.stairs_position = level.stairs
@@ -346,12 +347,14 @@ class Game:
     def _save_current_floor(self) -> None:
         if self.state.floor >= 0 or not self.world.dungeon_grid:
             return
-        self.world.dungeon_levels[self.state.floor] = DungeonLevelSnapshot(
+        levels = self._active_dungeon_levels()
+        levels[self.state.floor] = DungeonLevelSnapshot(
             dungeon_grid=deepcopy(self.world.dungeon_grid),
             rooms=list(self.world.rooms),
             stairs_position=deepcopy(self.world.stairs_position),
             entities=self._snapshot_non_player_entities(),
         )
+        self.world.dungeon_levels = levels
 
     def _save_current_overworld_section(self) -> None:
         if self.state.area != "overworld" or not self.world.dungeon_grid:
@@ -374,7 +377,7 @@ class Game:
         self.world.rooms = []
 
     def _restore_floor(self, floor: int, *, arrival: str) -> bool:
-        snapshot = self.world.dungeon_levels.get(floor)
+        snapshot = self._active_dungeon_levels().get(floor)
         if snapshot is None:
             return False
 
@@ -399,6 +402,37 @@ class Game:
         self._sync_down_stairs(player_position)
         update_vision(self.ecs, self.world, self.config, self.world.player_eid)
         return True
+
+    def _active_dungeon_levels(self) -> dict[int, DungeonLevelSnapshot]:
+        active = self._active_dungeon()
+        if active is None:
+            return self.world.dungeon_levels
+        self.world.dungeon_levels = active.levels
+        return active.levels
+
+    def _active_dungeon(self) -> DungeonInstance | None:
+        if self.world.active_dungeon_id is None:
+            return None
+        return self.world.dungeons.get(self.world.active_dungeon_id)
+
+    def _activate_dungeon_for_current_entrance(self, entrance: Position) -> DungeonInstance:
+        dungeon_id = self._dungeon_id(entrance)
+        dungeon = self.world.dungeons.get(dungeon_id)
+        if dungeon is None:
+            dungeon = DungeonInstance(
+                dungeon_id=dungeon_id,
+                section=self.world.overworld_section,
+                entrance=Position(entrance.x, entrance.y),
+                max_depth=self._player_level(),
+            )
+            self.world.dungeons[dungeon_id] = dungeon
+        self.world.active_dungeon_id = dungeon_id
+        self.world.dungeon_levels = dungeon.levels
+        return dungeon
+
+    def _dungeon_id(self, entrance: Position) -> str:
+        section_x, section_y = self.world.overworld_section
+        return f"{section_x},{section_y}:{entrance.x},{entrance.y}"
 
     def _snapshot_non_player_entities(self) -> list[EntitySnapshot]:
         snapshots: list[EntitySnapshot] = []
