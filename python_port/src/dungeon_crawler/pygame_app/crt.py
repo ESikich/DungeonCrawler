@@ -79,7 +79,7 @@ class CRTEffect:
 
         if self.settings.scanlines:
             scanline = cache.curved_scanline if self.settings.curvature else cache.scanline
-            color -= scanline[:, :, None] * self.tuning.shader_scanline_strength
+            color *= 1.0 - scanline[:, :, None] * self.tuning.shader_scanline_strength
 
         if self.settings.glow:
             glow = _soft_glow_rgb(np, source_rgb)
@@ -246,12 +246,12 @@ class _ShaderCache:
     @cached_property
     def scanline(self) -> object:
         np = _numpy()
-        return np.sin(self.v * 800.0).astype(np.float32)
+        return (0.5 + 0.5 * np.sin(self.v * 800.0)).astype(np.float32)
 
     @cached_property
     def curved_scanline(self) -> object:
         np = _numpy()
-        return np.sin(self.curved_v * 800.0).astype(np.float32)
+        return (0.5 + 0.5 * np.sin(self.curved_v * 800.0)).astype(np.float32)
 
     def _sample_axis(self, axis: object, size: int) -> object:
         np = _numpy()

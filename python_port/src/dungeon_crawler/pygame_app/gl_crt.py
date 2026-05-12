@@ -479,8 +479,8 @@ vec3 shaderScene(vec2 screenUV) {
     color.rgb = mix(vec3(gray), color.rgb, uSaturation);
 
     if (uScanlines) {
-        float scanline = sin(uv.y * 800.0) * uShaderScanlineStrength;
-        color.rgb -= scanline;
+        float scanline = 0.5 + 0.5 * sin(uv.y * 800.0);
+        color.rgb *= 1.0 - scanline * uShaderScanlineStrength;
     }
 
     if (uGlow) {
